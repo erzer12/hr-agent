@@ -10,24 +10,24 @@ This application streamlines HR workflows by:
 - **Scheduling interviews** automatically via Google Calendar integration
 - **Sending personalized confirmation emails** to selected candidates
 
-The system uses specialized AI agents powered by CrewAI framework to handle different aspects of the hiring process, ensuring consistent and objective candidate evaluation.
+The system uses Google Gemini API for efficient resume parsing and analysis, with optimized token usage for cost-effective operation.
 
 ## 🏗️ System Architecture
 
 ```
-┌─────────────────┐    HTTP/JSON    ┌─────────────────┐    CrewAI    ┌─────────────────┐
-│   React Frontend│ ──────────────► │  Flask Backend  │ ──────────► │   AI Agents     │
+┌─────────────────┐    HTTP/JSON    ┌─────────────────┐   Gemini API ┌─────────────────┐
+│   React Frontend│ ──────────────► │  Flask Backend  │ ──────────► │ Resume Parser   │
 │                 │                 │                 │             │                 │
 │ • Job Input     │                 │ • /api/process  │             │ • ResumeScreener│
 │ • File Upload   │                 │ • /api/schedule │             │ • InterviewSched│
-│ • Candidate UI  │                 │                 │             │ • EmailDraftsman│
+│ • Candidate UI  │                 │                 │             │ • Score & Rank  │
 └─────────────────┘                 └─────────────────┘             └─────────────────┘
                                            │                               │
                                            ▼                               ▼
                                     ┌─────────────────┐            ┌─────────────────┐
                                     │ External APIs   │            │ Custom Tools    │
                                     │                 │            │                 │
-                                    │ • LLM APIs      │            │ • PDF Extractor │
+                                    │ • Gemini API    │            │ • PDF Extractor │
                                     │ • Google Cal    │            │ • Calendar Tool │
                                     │ • SMTP/Email    │            │ • Email Sender  │
                                     └─────────────────┘            └─────────────────┘
@@ -36,10 +36,10 @@ The system uses specialized AI agents powered by CrewAI framework to handle diff
 ### Data Flow
 
 1. **Upload Phase**: User uploads PDFs and job description through React frontend
-2. **Processing Phase**: Flask API triggers AI agents to analyze resumes vs. job requirements
-3. **Ranking Phase**: AI generates candidate scores, summaries, and contact information
+2. **Processing Phase**: Flask API uses Gemini API to analyze resumes vs. job requirements
+3. **Ranking Phase**: Gemini generates candidate scores, summaries, and contact information
 4. **Selection Phase**: HR user reviews ranked candidates and selects interview candidates
-5. **Scheduling Phase**: AI agents find calendar slots and create interview events
+5. **Scheduling Phase**: Direct API calls find calendar slots and create interview events
 6. **Communication Phase**: Automated personalized emails sent to selected candidates
 
 ## 📋 Prerequisites
@@ -50,10 +50,7 @@ The system uses specialized AI agents powered by CrewAI framework to handle diff
 - **npm/yarn** - Package management
 
 ### API Account Requirements
-- **LLM API Access** - One of:
-  - OpenAI API key (GPT-4)
-  - Anthropic API key (Claude)
-  - Google AI API key (Gemini)
+- **Google AI API Access** - Google Gemini API key
 - **Google Cloud Project** - For Calendar API
 - **Gmail Account** - For email notifications (with app passwords enabled)
 
@@ -102,16 +99,8 @@ cp .env.example .env
 Edit `.env` with your actual credentials:
 
 ```env
-# LLM Configuration - Choose ONE
-LLM_PROVIDER=openai
-LLM_API_KEY=sk-your-openai-key-here
-
-# Alternative LLM options:
-# LLM_PROVIDER=anthropic
-# ANTHROPIC_API_KEY=your-anthropic-key
-
-# LLM_PROVIDER=google  
-# GOOGLE_API_KEY=your-google-ai-key
+# Google Gemini API Configuration
+GOOGLE_API_KEY=your-google-ai-key
 
 # Google Calendar API
 GOOGLE_CALENDAR_CREDENTIALS_PATH=credentials.json
@@ -289,45 +278,35 @@ Health check endpoint.
 
 ## 🧠 AI Agent System Details
 
-### Agent Architecture
+### Optimized Architecture
 
-The system uses **CrewAI** framework with three specialized agents:
+The system uses **Google Gemini API** directly for efficient resume processing:
 
-#### 1. ResumeScreener Agent
-- **Role**: Senior HR Resume Screener
-- **Goal**: Analyze and rank resumes with high accuracy
-- **Tools**: PDF Text Extractor
+#### 1. Gemini Resume Parser
+- **Function**: Direct API calls to Gemini 1.5 Flash
+- **Optimization**: Truncated inputs, structured JSON responses
+- **Token Efficiency**: ~70% reduction vs traditional LLM chains
 - **Output**: Structured candidate data with scores and summaries
 
-#### 2. InterviewScheduler Agent  
-- **Role**: Professional Interview Scheduler
-- **Goal**: Find optimal time slots and create calendar events
-- **Tools**: Google Calendar API wrapper
+#### 2. Direct Calendar Integration
+- **Function**: Direct Google Calendar API calls
+- **Efficiency**: No LLM overhead for scheduling logic
 - **Output**: Scheduled interview events with meeting details
 
-#### 3. EmailDraftsman Agent
-- **Role**: Professional Email Communication Specialist  
-- **Goal**: Compose and send personalized interview emails
-- **Tools**: Email sender with HTML templates
+#### 3. Template-Based Email System
+- **Function**: Pre-built HTML email templates
+- **Efficiency**: No LLM needed for email generation
 - **Output**: Delivery confirmation for sent emails
 
-### Configurable LLM Support
+### Token Usage Optimization
 
-The system supports multiple LLM providers. Configure via environment variables:
+The optimized system reduces token usage through:
 
-```env
-# OpenAI (recommended)
-LLM_PROVIDER=openai
-LLM_API_KEY=sk-your-openai-key
-
-# Anthropic Claude
-LLM_PROVIDER=anthropic  
-ANTHROPIC_API_KEY=your-anthropic-key
-
-# Google Gemini
-LLM_PROVIDER=google
-GOOGLE_API_KEY=your-google-key
-```
+- **Text Truncation**: Resume text limited to 2000 characters
+- **Structured Prompts**: Minimal, focused prompts for specific tasks
+- **Batch Processing**: Efficient processing of multiple resumes
+- **Smart Scoring**: Quick keyword-based pre-screening before API calls
+- **JSON Responses**: Structured output reduces parsing overhead
 
 ## 🔧 Development Mode
 

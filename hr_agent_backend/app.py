@@ -8,7 +8,7 @@ from flask_cors import CORS
 import os
 import tempfile
 import logging
-from agents import HRAgentCrew
+from optimized_agents import HRAgentCrew
 from werkzeug.utils import secure_filename
 
 # Initialize Flask app
