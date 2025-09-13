@@ -404,3 +404,13 @@ python app.py
 - **Analytics dashboard** for hiring metrics
 
 For questions or support, please open an issue in the repository.
+
+## 📊 SWOT Analysis
+
+For a comprehensive strategic analysis of the HR AI Agent system, including strengths, weaknesses, opportunities, and threats, see [SWOT_ANALYSIS.md](SWOT_ANALYSIS.md).
+
+### Key Strategic Insights:
+- **70% cost reduction** through optimized Gemini API usage
+- **Strong market opportunity** in SMB recruitment automation
+- **Technical differentiation** through direct API integration
+- **Growth potential** in multi-language and industry-specific markets
