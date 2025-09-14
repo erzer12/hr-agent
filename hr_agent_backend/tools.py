@@ -11,7 +11,7 @@ import smtplib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, ClassVar
 
 import PyPDF2
 from google.oauth2.credentials import Credentials
@@ -20,8 +20,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from crewai_tools import BaseTool
-
+from crewai.tools import BaseTool
 logger = logging.getLogger(__name__)
 
 class PDFTextExtractor(BaseTool):
@@ -66,13 +65,14 @@ class GoogleCalendarTool(BaseTool):
     
     name: str = "Google Calendar Tool"
     description: str = "Schedule interviews and manage calendar events"
+    service: Any = None
     
     # If modifying these scopes, delete the token.json file
-    SCOPES = ['https://www.googleapis.com/auth/calendar']
+    SCOPES: ClassVar[List[str]] = ['https://www.googleapis.com/auth/calendar']
     
     def __init__(self):
         super().__init__()
-        self.service = self._authenticate()
+        self.service, self.http = self._authenticate()
     
     def _authenticate(self):
         """Authenticate with Google Calendar API"""
@@ -94,13 +94,14 @@ class GoogleCalendarTool(BaseTool):
                     raise FileNotFoundError(f"Google Calendar credentials file not found: {credentials_path}")
                 
                 flow = InstalledAppFlow.from_client_secrets_file(credentials_path, self.SCOPES)
-                creds = flow.run_local_server(port=0)
+                creds = flow.run_local_server(port=8080)
             
             # Save the credentials for the next run
             with open(token_path, 'w') as token:
                 token.write(creds.to_json())
         
-        return build('calendar', 'v3', credentials=creds)
+        http = creds.authorize(Http())
+        return build('calendar', 'v3', http=http), http
     
     def _run(self, action: str, **kwargs) -> Any:
         """
@@ -182,7 +183,8 @@ class GoogleCalendarTool(BaseTool):
                 timeMin=start_time.isoformat() + 'Z',
                 timeMax=end_time.isoformat() + 'Z',
                 singleEvents=True,
-                orderBy='startTime'
+                orderBy='startTime',
+                http=self.http
             ).execute()
             
             events = events_result.get('items', [])
@@ -232,7 +234,7 @@ class GoogleCalendarTool(BaseTool):
         }
         
         try:
-            event = self.service.events().insert(calendarId='primary', body=event).execute()
+            event = self.service.events().insert(calendarId='primary', body=event, http=self.http).execute()
             logger.info(f"Event created: {event.get('htmlLink')}")
             
             return {
@@ -245,6 +247,15 @@ class GoogleCalendarTool(BaseTool):
             logger.error(f"Error creating calendar event: {str(e)}")
             raise
     
+    def get_calendar_iframe_url(self) -> str:
+        """Get the public URL for the primary calendar"""
+        try:
+            calendar = self.service.calendars().get(calendarId='primary', http=self.http).execute()
+            return f"https://calendar.google.com/calendar/embed?src={calendar['id']}"
+        except HttpError as e:
+            logger.error(f"Error getting calendar URL: {str(e)}")
+            return ""
+
     def list_events(self, days_ahead: int = 7) -> List[Dict[str, Any]]:
         """List upcoming events"""
         now = datetime.utcnow()
@@ -270,6 +281,12 @@ class EmailSender(BaseTool):
     
     name: str = "Email Sender"
     description: str = "Send professional interview confirmation emails to candidates"
+    smtp_server: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    email_address: Optional[str] = None
+    email_password: Optional[str] = None
+    company_name: str = "Your Company"
+    interviewer_name: str = "Hiring Manager"
     
     def __init__(self):
         super().__init__()
@@ -279,33 +296,39 @@ class EmailSender(BaseTool):
         self.email_password = os.getenv('EMAIL_PASSWORD')
         self.company_name = os.getenv('COMPANY_NAME', 'Your Company')
         self.interviewer_name = os.getenv('INTERVIEWER_NAME', 'Hiring Manager')
+
+    def draft_email(self, candidate_name: str, candidate_email: str, interview_details: Dict[str, Any], template: str = "professional") -> str:
+        """Drafts an interview confirmation email."""
+        subject = f"Interview Confirmation - {self.company_name}"
+        body = self._create_email_body(candidate_name, interview_details, template)
     
-    def _run(self, candidate_email: str, candidate_name: str, interview_details: Dict[str, Any]) -> bool:
+    def _run(self, candidate_email: str, candidate_name: str, interview_details: Dict[str, Any], template: str = "professional") -> bool:
         """
         Send interview confirmation email
-        
+
         Args:
             candidate_email: Candidate's email address
             candidate_name: Candidate's name
             interview_details: Interview scheduling details
-            
+            template: Email template to use ('professional', 'casual', 'technical')
+
         Returns:
             True if email sent successfully, False otherwise
         """
         try:
             # Create email content
             subject = f"Interview Confirmation - {self.company_name}"
-            body = self._create_email_body(candidate_name, interview_details)
-            
+            body = self._create_email_body(candidate_name, interview_details, template)
+
             # Create message
             msg = MIMEMultipart()
             msg['From'] = self.email_address
             msg['To'] = candidate_email
             msg['Subject'] = subject
-            
+
             # Add body to email
             msg.attach(MIMEText(body, 'html'))
-            
+
             # Send email
             if self.email_address and self.email_password:
                 server = smtplib.SMTP(self.smtp_server, self.smtp_port)
@@ -313,82 +336,158 @@ class EmailSender(BaseTool):
                 server.login(self.email_address, self.email_password)
                 server.send_message(msg)
                 server.quit()
-                
+
                 logger.info(f"Interview confirmation email sent to {candidate_email}")
                 return True
             else:
                 logger.warning("Email credentials not configured - email not sent")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error sending email to {candidate_email}: {str(e)}")
             return False
     
-    def _create_email_body(self, candidate_name: str, interview_details: Dict[str, Any]) -> str:
-        """Create HTML email body"""
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 20px; }}
-                .content {{ background-color: #fff; padding: 20px; border: 1px solid #dee2e6; border-radius: 8px; }}
-                .highlight {{ background-color: #e3f2fd; padding: 15px; border-left: 4px solid #2196f3; margin: 20px 0; }}
-                .footer {{ margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6; font-size: 14px; color: #6c757d; }}
-                .button {{ display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; margin: 10px 0; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>{self.company_name}</h1>
-                    <h2>Interview Confirmation</h2>
-                </div>
-                
-                <div class="content">
-                    <p>Dear {candidate_name},</p>
-                    
-                    <p>Thank you for your interest in joining our team! We're excited to move forward with your application and would like to schedule an interview with you.</p>
-                    
-                    <div class="highlight">
-                        <h3>Interview Details:</h3>
+    def _create_email_body(self, candidate_name: str, interview_details: Dict[str, Any], template: str = "professional") -> str:
+        """Create HTML email body based on template"""
+        if template == "casual":
+            return f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: 'Comic Sans MS', cursive, sans-serif; line-height: 1.6; color: #444; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; background-color: #fefefe; border-radius: 10px; }}
+                    .header {{ text-align: center; color: #ff6600; margin-bottom: 20px; }}
+                    .content {{ font-size: 16px; }}
+                    .footer {{ margin-top: 20px; font-size: 12px; color: #999; text-align: center; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Hey {candidate_name}!</h1>
+                    </div>
+                    <div class="content">
+                        <p>We're super excited about your application and would love to chat with you soon.</p>
+                        <p>Here's the scoop on your interview:</p>
                         <ul>
                             <li><strong>Date:</strong> {interview_details.get('date', 'TBD')}</li>
                             <li><strong>Time:</strong> {interview_details.get('time', 'TBD')} ({interview_details.get('timezone', 'EST')})</li>
                             <li><strong>Duration:</strong> 30 minutes</li>
                             <li><strong>Interviewer:</strong> {self.interviewer_name}</li>
-                            <li><strong>Meeting Link:</strong> {interview_details.get('meeting_link', 'Will be provided closer to the interview date')}</li>
+                            <li><strong>Meeting Link:</strong> {interview_details.get('meeting_link', 'Will be sent soon')}</li>
                         </ul>
+                        <p>Can't wait to meet you!</p>
+                    </div>
+                    <div class="footer">
+                        <p>Cheers,<br>{self.company_name} Team</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        elif template == "technical":
+            return f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: 'Courier New', monospace; background-color: #f4f4f4; color: #222; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; background-color: #fff; border-radius: 5px; }}
+                    .header {{ border-bottom: 2px solid #007acc; padding-bottom: 10px; margin-bottom: 20px; }}
+                    .content {{ font-size: 14px; line-height: 1.5; }}
+                    .footer {{ margin-top: 20px; font-size: 12px; color: #666; }}
+                    code {{ background-color: #eaeaea; padding: 2px 4px; border-radius: 3px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Interview Confirmation</h1>
+                    </div>
+                    <div class="content">
+                        <p>Dear {candidate_name},</p>
+                        <p>We have scheduled your technical interview as follows:</p>
+                        <ul>
+                            <li><strong>Date:</strong> {interview_details.get('date', 'TBD')}</li>
+                            <li><strong>Time:</strong> {interview_details.get('time', 'TBD')} ({interview_details.get('timezone', 'EST')})</li>
+                            <li><strong>Duration:</strong> 30 minutes</li>
+                            <li><strong>Interviewer:</strong> {self.interviewer_name}</li>
+                            <li><strong>Meeting Link:</strong> <a href="{interview_details.get('meeting_link', '#')}">{interview_details.get('meeting_link', 'TBD')}</a></li>
+                        </ul>
+                        <p>Please be prepared to discuss your coding experience and solve problems live.</p>
+                    </div>
+                    <div class="footer">
+                        <p>Best regards,<br>{self.company_name} Recruitment Team</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        else:  # professional template
+            return f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 20px; }}
+                    .content {{ background-color: #fff; padding: 20px; border: 1px solid #dee2e6; border-radius: 8px; }}
+                    .highlight {{ background-color: #e3f2fd; padding: 15px; border-left: 4px solid #2196f3; margin: 20px 0; }}
+                    .footer {{ margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6; font-size: 14px; color: #6c757d; }}
+                    .button {{ display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; margin: 10px 0; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>{self.company_name}</h1>
+                        <h2>Interview Confirmation</h2>
                     </div>
                     
-                    <h3>What to Expect:</h3>
-                    <ul>
-                        <li>Discussion about your background and experience</li>
-                        <li>Overview of the role and team</li>
-                        <li>Opportunity for you to ask questions about the position and company</li>
-                    </ul>
+                    <div class="content">
+                        <p>Dear {candidate_name},</p>
+                        
+                        <p>Thank you for your interest in joining our team! We're excited to move forward with your application and would like to schedule an interview with you.</p>
+                        
+                        <div class="highlight">
+                            <h3>Interview Details:</h3>
+                            <ul>
+                                <li><strong>Date:</strong> {interview_details.get('date', 'TBD')}</li>
+                                <li><strong>Time:</strong> {interview_details.get('time', 'TBD')} ({interview_details.get('timezone', 'EST')})</li>
+                                <li><strong>Duration:</strong> 30 minutes</li>
+                                <li><strong>Interviewer:</strong> {self.interviewer_name}</li>
+                                <li><strong>Meeting Link:</strong> {interview_details.get('meeting_link', 'Will be provided closer to the interview date')}</li>
+                            </ul>
+                        </div>
+                        
+                        <h3>What to Expect:</h3>
+                        <ul>
+                            <li>Discussion about your background and experience</li>
+                            <li>Overview of the role and team</li>
+                            <li>Opportunity for you to ask questions about the position and company</li>
+                        </ul>
+                        
+                        <h3>Next Steps:</h3>
+                        <p>Please confirm your attendance by replying to this email. If you need to reschedule, please let us know at least 24 hours in advance.</p>
+                        
+                        <p>We look forward to speaking with you!</p>
+                        
+                        <p>Best regards,<br>
+                        {self.interviewer_name}<br>
+                        {self.company_name}<br>
+                        </p>
+                    </div>
                     
-                    <h3>Next Steps:</h3>
-                    <p>Please confirm your attendance by replying to this email. If you need to reschedule, please let us know at least 24 hours in advance.</p>
-                    
-                    <p>We look forward to speaking with you!</p>
-                    
-                    <p>Best regards,<br>
-                    {self.interviewer_name}<br>
-                    {self.company_name}<br>
-                    </p>
+                    <div class="footer">
+                        <p>This email was sent from an automated system. Please do not reply directly to this email address.</p>
+                        <p>If you have any questions, please contact us at hr@{self.company_name.lower().replace(' ', '')}.com</p>
+                    </div>
                 </div>
-                
-                <div class="footer">
-                    <p>This email was sent from an automated system. Please do not reply directly to this email address.</p>
-                    <p>If you have any questions, please contact us at hr@{self.company_name.lower().replace(' ', '')}.com</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+            </body>
+            </html>
+            """
 
 # Mock implementations for development/testing
 class MockPDFTextExtractor(PDFTextExtractor):

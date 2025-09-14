@@ -29,8 +29,7 @@ class GeminiResumeParser:
                 temperature=0.1,
                 top_p=0.8,
                 top_k=20,
-                max_output_tokens=1000,  # Limit output tokens
-                response_mime_type="application/json"
+                max_output_tokens=1000  # Limit output tokens
             ),
             safety_settings={
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -57,7 +56,10 @@ Required JSON format:
 
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            logger.info(f"Gemini API response: {response.text}")
+            # Clean the response to remove markdown
+            cleaned_text = response.text.strip().replace('```json', '').replace('```', '')
+            result = json.loads(cleaned_text)
             
             # Ensure required fields exist
             return {
@@ -98,7 +100,7 @@ Skills: {', '.join(candidate_info['skills'][:5])}
 Education: {candidate_info['education'][:100]}
 """
         
-        prompt = f"""Score this candidate (1-10) for the job. Return ONLY valid JSON:
+        prompt = f"""Score this candidate (1-100) for the job. Return ONLY valid JSON:
 
 JOB: {condensed_job}
 
@@ -109,17 +111,20 @@ Required JSON format:
 
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text)
+            logger.info(f"Gemini API response for scoring: {response.text}")
+            # Clean the response to remove markdown
+            cleaned_text = response.text.strip().replace('```json', '').replace('```', '')
+            result = json.loads(cleaned_text)
             
             return {
-                "score": min(10, max(1, float(result.get("score", 5)))),
+                "score": min(100, max(1, float(result.get("score", 50)))),
                 "reasons": result.get("reasons", ["Unable to assess"])[:3]
             }
             
         except Exception as e:
             logger.error(f"Error scoring candidate: {str(e)}")
             return {
-                "score": 5.0,
+                "score": 50.0,
                 "reasons": ["Error in assessment"]
             }
     
@@ -127,6 +132,7 @@ Required JSON format:
         """
         Process multiple resumes efficiently
         """
+        logger.info("Starting batch resume processing...")
         candidates = []
         
         # Extract key job requirements once to reuse
@@ -134,21 +140,26 @@ Required JSON format:
         
         for file_path, resume_text in resume_texts.items():
             try:
+                logger.info(f"Processing resume: {os.path.basename(file_path)}")
                 # Extract candidate info
                 candidate_info = self.extract_candidate_info(resume_text)
+                logger.info(f"  - Extracted info for: {candidate_info.get('name', 'Unknown')}")
                 
                 # Quick scoring based on keyword matching (reduces API calls)
                 quick_score = self._quick_score(candidate_info, job_keywords)
                 
                 # Only use API for detailed scoring if quick score is promising (>6)
                 if quick_score > 6:
+                    logger.info(f"  - Performing detailed scoring for {candidate_info.get('name', 'Unknown')}")
                     detailed_score = self.score_candidate(candidate_info, job_description)
                     final_score = detailed_score["score"]
                     reasons = detailed_score["reasons"]
                 else:
+                    logger.info(f"  - Performing quick scoring for {candidate_info.get('name', 'Unknown')}")
                     final_score = quick_score
                     reasons = self._generate_quick_reasons(candidate_info, job_keywords)
                 
+                logger.info(f"  - Finished scoring for {candidate_info.get('name', 'Unknown')}. Score: {final_score}")
                 candidates.append({
                     "name": candidate_info["name"],
                     "email": candidate_info["email"],
@@ -163,6 +174,7 @@ Required JSON format:
         
         # Sort by score (highest first)
         candidates.sort(key=lambda x: x["score"], reverse=True)
+        logger.info("Batch resume processing complete.")
         return candidates
     
     def _extract_job_keywords(self, job_description: str) -> List[str]:
@@ -185,7 +197,7 @@ Required JSON format:
         Reduces need for API calls
         """
         if not job_keywords:
-            return 5.0
+            return 50.0
         
         candidate_skills = [skill.lower() for skill in candidate_info.get("skills", [])]
         candidate_text = f"{candidate_info.get('summary', '')} {' '.join(candidate_skills)}".lower()
@@ -194,12 +206,12 @@ Required JSON format:
         match_ratio = matches / len(job_keywords)
         
         # Base score on experience and keyword matches
-        experience_score = min(candidate_info.get("experience_years", 0) / 5 * 3, 3)
-        keyword_score = match_ratio * 5
-        education_score = 2 if candidate_info.get("education") else 1
+        experience_score = min(candidate_info.get("experience_years", 0) / 5 * 30, 30)
+        keyword_score = match_ratio * 50
+        education_score = 20 if candidate_info.get("education") else 10
         
         total_score = experience_score + keyword_score + education_score
-        return min(10, max(1, total_score))
+        return min(100, max(1, total_score))
     
     def _generate_quick_reasons(self, candidate_info: Dict[str, Any], job_keywords: List[str]) -> List[str]:
         """Generate assessment reasons without API call"""

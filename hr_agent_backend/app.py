@@ -19,8 +19,9 @@ CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize HR Agent Crew
-hr_crew = HRAgentCrew()
+# Initialize Flask app
+app = Flask(__name__)
+CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
 
 # Configuration
 UPLOAD_FOLDER = tempfile.mkdtemp()
@@ -102,50 +103,92 @@ def process_resumes():
         logger.error(f"Error processing resumes: {str(e)}")
         return jsonify({"error": "Internal server error occurred while processing resumes"}), 500
 
-@app.route('/api/schedule', methods=['POST'])
-def schedule_interviews():
+@app.route('/api/draft_email', methods=['POST'])
+def draft_email():
     """
-    Schedule interviews for selected candidates
-    
+    Draft an interview confirmation email
+    """
+    try:
+        data = request.get_json()
+        if not data or 'candidate' not in data or 'interview_details' not in data:
+            return jsonify({"error": "Candidate and interview_details are required"}), 400
+
+        candidate = data['candidate']
+        interview_details = data['interview_details']
+        template = data.get('template', 'professional')
+
+        draft = hr_crew.draft_email(candidate, interview_details, template)
+        return jsonify({"draft": draft})
+    except Exception as e:
+        logger.error(f"Error drafting email: {str(e)}")
+        return jsonify({"error": "Internal server error occurred while drafting email"}), 500
+
+@app.route('/api/calendar', methods=['GET'])
+def get_calendar():
+    """
+    Get Google Calendar iframe URL
+    """
+    try:
+        calendar_url = hr_crew.get_calendar_url()
+        return jsonify({"calendar_url": calendar_url})
+    except Exception as e:
+        logger.error(f"Error getting calendar URL: {str(e)}")
+        return jsonify({"error": "Internal server error occurred while getting calendar URL"}), 500
+
+@app.route('/api/availability', methods=['GET'])
+def get_availability():
+    """
+    Get available interview slots
+    """
+    try:
+        slots = hr_crew.get_available_slots()
+        return jsonify(slots)
+    except Exception as e:
+        logger.error(f"Error getting availability: {str(e)}")
+        return jsonify({"error": "Internal server error occurred while getting availability"}), 500
+
+@app.route('/api/schedule', methods=['POST'])
+def schedule_interview():
+    """
+    Schedule an interview for a selected candidate
+
     Expected JSON payload:
     {
-        "candidates": [
-            {"name": "John Doe", "email": "john@example.com", "phone": "123-456-7890"},
-            ...
-        ]
+        "candidate": {"name": "John Doe", "email": "john@example.com"},
+        "start_time": "2025-10-26T10:00:00",
+        "end_time": "2025-10-26T10:30:00",
+        "template": "professional"
     }
-    
+
     Returns:
     - Success message with scheduling details
     """
     try:
         data = request.get_json()
-        
-        if not data or 'candidates' not in data:
-            return jsonify({"error": "Candidates list is required"}), 400
-        
-        candidates = data['candidates']
-        
-        if not candidates or len(candidates) == 0:
-            return jsonify({"error": "At least one candidate is required"}), 400
-        
-        # Validate candidate data
-        for candidate in candidates:
-            if not isinstance(candidate, dict) or 'name' not in candidate or 'email' not in candidate:
-                return jsonify({"error": "Each candidate must have name and email"}), 400
-        
-        logger.info(f"Scheduling interviews for {len(candidates)} candidates")
-        
-        # Schedule interviews using AI agents
-        result = hr_crew.schedule_interviews(candidates)
-        
-        logger.info("Successfully scheduled interviews and sent confirmation emails")
-        
+
+        if not data or 'candidate' not in data or 'start_time' not in data or 'end_time' not in data:
+            return jsonify({"error": "Candidate, start_time and end_time are required"}), 400
+
+        candidate = data['candidate']
+        start_time = data['start_time']
+        end_time = data['end_time']
+        template = data.get('template', 'professional')
+
+        if not isinstance(candidate, dict) or 'name' not in candidate or 'email' not in candidate:
+            return jsonify({"error": "Candidate must have name and email"}), 400
+
+        logger.info(f"Scheduling interview for {candidate['name']} at {start_time}")
+
+        # Schedule interview using AI agents
+        result = hr_crew.schedule_interview(candidate, start_time, end_time, template)
+
+        logger.info("Successfully scheduled interview and sent confirmation email")
+
         return jsonify(result)
-        
+
     except Exception as e:
-        logger.error(f"Error scheduling interviews: {str(e)}")
-        return jsonify({"error": "Internal server error occurred while scheduling interviews"}), 500
+        logger.error(f"Error scheduling interview: {str(e)}")
+        return jsonify({"error": "Internal server error occurred while scheduling interview"}), 500
 
 @app.errorhandler(413)
 def too_large(e):
@@ -169,9 +212,12 @@ if __name__ == '__main__':
     # Load environment variables
     from dotenv import load_dotenv
     load_dotenv()
-    
+
+    # ADD THE INITIALIZATION HERE, AFTER load_dotenv()
+    hr_crew = HRAgentCrew()
+
     # Validate required environment variables
-    required_vars = ['LLM_API_KEY', 'GOOGLE_CALENDAR_CREDENTIALS_PATH']
+    required_vars = ['GOOGLE_API_KEY', 'GOOGLE_CALENDAR_CREDENTIALS_PATH']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:

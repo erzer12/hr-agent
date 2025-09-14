@@ -1,27 +1,19 @@
-# Core Framework Dependencies
-flask==3.0.0
-flask-cors==4.0.0
-python-dotenv==1.0.0
-werkzeug==3.0.1
+# Essentials
+flask
+flask-cors
+python-dotenv
 
-# Google AI Dependencies
-google-generativeai==0.3.2
+# AI and Google Services
+google-generativeai
+google-api-python-client
+google-auth-oauthlib
 
-# Google API Dependencies
-google-auth==2.23.4
-google-auth-oauthlib==1.1.0
-google-auth-httplib2==0.2.0
-google-api-python-client==2.108.0
+# Utilities
+PyPDF2
+crewai
 
-# PDF Processing
-PyPDF2==3.0.1
-
-# Utility Dependencies
-requests==2.31.0
-python-dateutil==2.8.2
-
-# Development and Testing
-pytest==7.4.3
-pytest-mock==3.12.0
-black==23.11.0
-flake8==6.1.0
+# Testing & Linting (Optional but good practice)
+pytest
+pytest-mock
+black
+flake8

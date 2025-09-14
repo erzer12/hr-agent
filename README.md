@@ -186,7 +186,7 @@ The first time you run the backend, it will:
 
 ```bash
 cd hr_agent_backend
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/Scripts/activate
 python app.py
 ```
 

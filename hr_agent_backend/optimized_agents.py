@@ -54,84 +54,65 @@ class OptimizedHRSystem:
             logger.error(f"Error processing resumes: {str(e)}")
             raise
     
-    def schedule_interviews(self, candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_available_slots(self) -> List[Dict[str, Any]]:
+        """Get available interview slots"""
+        return self.calendar_tool._run('find_slots', duration_minutes=30, days_ahead=14)
+
+    def get_calendar_url(self) -> str:
+        """Get Google Calendar iframe URL"""
+        return self.calendar_tool.get_calendar_iframe_url()
+
+    def draft_email(self, candidate: Dict[str, Any], interview_details: Dict[str, Any], template: str = "professional") -> str:
+        """Draft interview confirmation email"""
+        return self.email_sender.draft_email(candidate['name'], candidate['email'], interview_details, template)
+
+    def schedule_interview(self, candidate: Dict[str, Any], start_time: str, end_time: str, template: str = "professional") -> Dict[str, Any]:
         """
-        Schedule interviews using direct tool calls (no LLM needed)
+        Schedule a single interview using direct tool calls
         """
         try:
-            logger.info(f"Scheduling interviews for {len(candidates)} candidates")
-            
-            # Step 1: Find available time slots
-            available_slots = self.calendar_tool._run('find_slots', duration_minutes=30, days_ahead=5)
-            
-            if len(available_slots) < len(candidates):
-                logger.warning(f"Only {len(available_slots)} slots available for {len(candidates)} candidates")
-            
-            scheduled_interviews = []
-            emails_sent = []
-            
-            # Step 2: Schedule interviews and send emails
-            for i, candidate in enumerate(candidates):
-                if i >= len(available_slots):
-                    logger.warning(f"No more slots available for candidate {candidate['name']}")
-                    break
-                
-                slot = available_slots[i]
-                
-                # Create calendar event
-                event_details = self.calendar_tool._run(
-                    'create_event',
-                    title=f"Interview: {os.getenv('COMPANY_NAME', 'Company')} - {candidate['name']}",
-                    start_time=slot['start_time'],
-                    end_time=slot['end_time'],
-                    attendee_emails=[candidate['email'], os.getenv('INTERVIEWER_EMAIL', 'interviewer@company.com')],
-                    description=f"Interview with {candidate['name']} for the open position."
-                )
-                
-                # Prepare interview details for email
-                interview_details = {
-                    'date': slot['date'],
-                    'time': slot['time'],
-                    'timezone': slot['timezone'],
-                    'meeting_link': event_details.get('meeting_link', 'TBD')
-                }
-                
-                # Send confirmation email
-                email_sent = self.email_sender._run(
-                    candidate['email'],
-                    candidate['name'],
-                    interview_details
-                )
-                
-                scheduled_interviews.append({
-                    'candidate_name': candidate['name'],
-                    'candidate_email': candidate['email'],
-                    'interview_date': slot['date'],
-                    'interview_time': slot['time'],
-                    'timezone': slot['timezone'],
-                    'meeting_link': interview_details['meeting_link']
-                })
-                
-                emails_sent.append({
-                    'candidate_name': candidate['name'],
-                    'candidate_email': candidate['email'],
-                    'email_sent': email_sent
-                })
-            
-            success_count = len([e for e in emails_sent if e['email_sent']])
-            
+            logger.info(f"Scheduling interview for {candidate['name']}")
+
+            # Create calendar event
+            event_details = self.calendar_tool._run(
+                'create_event',
+                title=f"Interview: {os.getenv('COMPANY_NAME', 'Company')} - {candidate['name']}",
+                start_time=start_time,
+                end_time=end_time,
+                attendee_emails=[candidate['email'], os.getenv('INTERVIEWER_EMAIL', 'interviewer@company.com')],
+                description=f"Interview with {candidate['name']} for the open position."
+            )
+
+            # Prepare interview details for email
+            interview_details = {
+                'date': datetime.fromisoformat(start_time).strftime('%Y-%m-%d'),
+                'time': datetime.fromisoformat(start_time).strftime('%I:%M %p'),
+                'timezone': 'EST',
+                'meeting_link': event_details.get('meeting_link', 'TBD')
+            }
+
+            # Send confirmation email
+            email_sent = self.email_sender._run(
+                candidate['email'],
+                candidate['name'],
+                interview_details,
+                template
+            )
+
             return {
                 "status": "success",
-                "message": f"Successfully scheduled {len(scheduled_interviews)} interviews and sent {success_count} confirmation emails",
+                "message": f"Successfully scheduled interview for {candidate['name']}",
                 "details": {
-                    "scheduled_interviews": len(scheduled_interviews),
-                    "emails_sent": success_count,
-                    "interviews": scheduled_interviews
+                    "candidate_name": candidate['name'],
+                    "interview_date": interview_details['date'],
+                    "interview_time": interview_details['time'],
+                    'meeting_link': interview_details['meeting_link'],
+                    "email_sent": email_sent
                 }
             }
-            
+
         except Exception as e:
-            logger.error(f"Error scheduling interviews: {str(e)}")
+            logger.error(f"Error scheduling interview: {str(e)}")
             raise
 
 # Maintain backward compatibility
@@ -144,5 +125,14 @@ class HRAgentCrew:
     def process_resumes(self, job_description: str, resume_files: List[str]) -> Dict[str, Any]:
         return self.optimized_system.process_resumes(job_description, resume_files)
     
-    def schedule_interviews(self, candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return self.optimized_system.schedule_interviews(candidates)
+    def get_available_slots(self) -> List[Dict[str, Any]]:
+        return self.optimized_system.get_available_slots()
+
+    def get_calendar_url(self) -> str:
+        return self.optimized_system.get_calendar_url()
+
+    def draft_email(self, candidate: Dict[str, Any], interview_details: Dict[str, Any], template: str = "professional") -> str:
+        return self.optimized_system.draft_email(candidate, interview_details, template)
+
+    def schedule_interview(self, candidate: Dict[str, Any], start_time: str, end_time: str, template: str = "professional") -> Dict[str, Any]:
+        return self.optimized_system.schedule_interview(candidate, start_time, end_time, template)
