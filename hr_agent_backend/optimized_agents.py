@@ -6,6 +6,7 @@ Reduces token usage and eliminates unnecessary LLM overhead
 import os
 import json
 import logging
+from datetime import datetime
 from typing import List, Dict, Any
 from tools import GoogleCalendarTool, EmailSender, PDFTextExtractor
 from tools import MockGoogleCalendarTool, MockEmailSender, MockPDFTextExtractor

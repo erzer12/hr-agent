@@ -8,7 +8,7 @@ from flask_cors import CORS
 import os
 import tempfile
 import logging
-from optimized_agents import HRAgentCrew
+from optimized_agents import HRAgentCrew, OptimizedHRSystem
 from werkzeug.utils import secure_filename
 
 # Initialize Flask app
@@ -18,10 +18,6 @@ CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Initialize Flask app
-app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
 
 # Configuration
 UPLOAD_FOLDER = tempfile.mkdtemp()

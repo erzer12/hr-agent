@@ -53,12 +53,23 @@ function App() {
           fetch('/api/calendar'),
           fetch('/api/availability'),
         ]);
+        
+        if (!calendarResponse.ok || !availabilityResponse.ok) {
+          throw new Error('Failed to fetch initial data');
+        }
+        
         const calendarData = await calendarResponse.json();
         const availabilityData = await availabilityResponse.json();
         setCalendarUrl(calendarData.calendar_url);
         setAvailability(availabilityData);
       } catch (error) {
         console.error("Error fetching initial data:", error);
+        setStatus({
+          isProcessing: false,
+          isScheduling: false,
+          message: 'Failed to load calendar data. Some features may not work.',
+          type: 'error'
+        });
       }
     };
     fetchData();
