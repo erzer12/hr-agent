@@ -19,6 +19,15 @@ interface Candidate {
   selected: boolean;
 }
 
+interface ScheduledInterview {
+  id: string;
+  candidateId: string;
+  candidateName: string;
+  candidateEmail: string;
+  date: string;
+  time: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+}
 interface ProcessingStatus {
   isProcessing: boolean;
   isScheduling: boolean;
@@ -30,6 +39,7 @@ function App() {
   const [jobDescription, setJobDescription] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
   const [status, setStatus] = useState<ProcessingStatus>({
     isProcessing: false,
     isScheduling: false,
@@ -45,6 +55,13 @@ function App() {
   const [emailTemplate, setEmailTemplate] = useState('professional');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
+  
+  // New state for bulk scheduling
+  const [minScore, setMinScore] = useState<number>(70);
+  const [maxCandidates, setMaxCandidates] = useState<number>(5);
+  const [bulkScheduleDate, setBulkScheduleDate] = useState<Date | null>(null);
+  const [bulkEmailTemplate, setBulkEmailTemplate] = useState('professional');
+  const [showBulkScheduler, setShowBulkScheduler] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -102,6 +119,88 @@ function App() {
     );
   };
 
+  const autoSelectCandidates = () => {
+    setCandidates(prev =>
+      prev.map(candidate => ({
+        ...candidate,
+        selected: candidate.score >= minScore
+      }))
+    );
+  };
+
+  const bulkScheduleInterviews = async () => {
+    const selectedCandidates = candidates.filter(c => c.selected).slice(0, maxCandidates);
+    
+    if (selectedCandidates.length === 0 || !bulkScheduleDate) {
+      setStatus({
+        isProcessing: false,
+        isScheduling: false,
+        message: 'Please select candidates and a date for bulk scheduling',
+        type: 'error'
+      });
+      return;
+    }
+
+    setStatus({
+      isProcessing: false,
+      isScheduling: true,
+      message: `Scheduling interviews for ${selectedCandidates.length} candidates...`,
+      type: 'info'
+    });
+
+    try {
+      const newInterviews: ScheduledInterview[] = [];
+      
+      for (let i = 0; i < selectedCandidates.length; i++) {
+        const candidate = selectedCandidates[i];
+        const startDateTime = new Date(bulkScheduleDate);
+        startDateTime.setHours(9 + i, 0, 0, 0); // Schedule at 9 AM, 10 AM, etc.
+        const endDateTime = new Date(startDateTime);
+        endDateTime.setMinutes(endDateTime.getMinutes() + 30);
+
+        const response = await fetch('/api/schedule', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            candidate: candidate,
+            start_time: startDateTime.toISOString(),
+            end_time: endDateTime.toISOString(),
+            template: bulkEmailTemplate,
+          }),
+        });
+
+        if (response.ok) {
+          newInterviews.push({
+            id: `interview-${Date.now()}-${i}`,
+            candidateId: candidate.id,
+            candidateName: candidate.name,
+            candidateEmail: candidate.email,
+            date: startDateTime.toISOString().split('T')[0],
+            time: startDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'scheduled'
+          });
+        }
+      }
+
+      setScheduledInterviews(prev => [...prev, ...newInterviews]);
+      setStatus({
+        isProcessing: false,
+        isScheduling: false,
+        message: `Successfully scheduled ${newInterviews.length} interviews`,
+        type: 'success'
+      });
+      setShowBulkScheduler(false);
+    } catch (error) {
+      setStatus({
+        isProcessing: false,
+        isScheduling: false,
+        message: 'Error during bulk scheduling. Please try again.',
+        type: 'error'
+      });
+    }
+  };
   const processResumes = async () => {
     if (!jobDescription.trim() || uploadedFiles.length === 0) {
       setStatus({
