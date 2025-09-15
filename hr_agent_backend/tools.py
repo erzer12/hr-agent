@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional, ClassVar
 
 import PyPDF2
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
+from google.auth.transport.requests import Request, AuthorizedSession
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -72,12 +72,13 @@ class GoogleCalendarTool(BaseTool):
     
     def __init__(self):
         super().__init__()
-        self.service, self.http = self._authenticate()
+        self.service = self._authenticate()
     
     def _authenticate(self):
         """Authenticate with Google Calendar API"""
         creds = None
-        credentials_path = os.getenv('GOOGLE_CALENDAR_CREDENTIALS_PATH', 'credentials.json')
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        credentials_path = os.path.join(script_dir, 'credentials.json')
         token_path = os.getenv('GOOGLE_CALENDAR_TOKEN_PATH', 'token.json')
         
         # The file token.json stores the user's access and refresh tokens
@@ -100,8 +101,8 @@ class GoogleCalendarTool(BaseTool):
             with open(token_path, 'w') as token:
                 token.write(creds.to_json())
         
-        http = creds.authorize(Http())
-        return build('calendar', 'v3', http=http), http
+        authed_session = AuthorizedSession(creds)
+        return build('calendar', 'v3', http=authed_session, cache_discovery=False)
     
     def _run(self, action: str, **kwargs) -> Any:
         """
@@ -183,8 +184,7 @@ class GoogleCalendarTool(BaseTool):
                 timeMin=start_time.isoformat() + 'Z',
                 timeMax=end_time.isoformat() + 'Z',
                 singleEvents=True,
-                orderBy='startTime',
-                http=self.http
+                orderBy='startTime'
             ).execute()
             
             events = events_result.get('items', [])
@@ -234,7 +234,7 @@ class GoogleCalendarTool(BaseTool):
         }
         
         try:
-            event = self.service.events().insert(calendarId='primary', body=event, http=self.http).execute()
+            event = self.service.events().insert(calendarId='primary', body=event).execute()
             logger.info(f"Event created: {event.get('htmlLink')}")
             
             return {
@@ -250,7 +250,7 @@ class GoogleCalendarTool(BaseTool):
     def get_calendar_iframe_url(self) -> str:
         """Get the public URL for the primary calendar"""
         try:
-            calendar = self.service.calendars().get(calendarId='primary', http=self.http).execute()
+            calendar = self.service.calendars().get(calendarId='primary').execute()
             return f"https://calendar.google.com/calendar/embed?src={calendar['id']}"
         except HttpError as e:
             logger.error(f"Error getting calendar URL: {str(e)}")
