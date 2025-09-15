@@ -571,162 +571,173 @@ function App() {
                   </div>
                 ))}
               </div>
+
+              {/* Bulk Selection Component */}
+              <div className="mt-6 border-t border-gray-200 pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <Star className="h-5 w-5 mr-2 text-purple-600" />
+                    Bulk Selection & Scheduling
+                  </h3>
+                  <button
+                    onClick={() => setShowBulkScheduler(!showBulkScheduler)}
+                    className="py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors flex items-center text-sm"
+                  >
+                    {showBulkScheduler ? 'Hide' : 'Show'} Bulk Scheduler
+                  </button>
+                </div>
+
+                {showBulkScheduler && (
+                  <div className="space-y-4">
+                    {/* Score Range Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Minimum Score
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={minScore}
+                          onChange={(e) => setMinScore(Number(e.target.value))}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Candidates
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={maxCandidates}
+                          onChange={(e) => setMaxCandidates(Number(e.target.value))}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          onClick={autoSelectCandidates}
+                          className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
+                        >
+                          <Star className="h-4 w-4 mr-2" />
+                          Auto Select
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Selected Candidates Summary */}
+                    <div className="p-4 bg-blue-50 rounded-lg">
+                      <h4 className="font-medium text-gray-900 mb-2">
+                        Selected Candidates ({candidates.filter(c => c.selected).length})
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {candidates.filter(c => c.selected).map(candidate => (
+                          <span
+                            key={candidate.id}
+                            className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm flex items-center"
+                          >
+                            {candidate.name} ({candidate.score})
+                            <button
+                              onClick={() => toggleCandidateSelection(candidate.id)}
+                              className="ml-2 text-blue-600 hover:text-blue-800"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Date and Time Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Calendar className="h-4 w-4 inline mr-2" />
+                          Interview Date
+                        </label>
+                        <DatePicker
+                          selected={bulkScheduleDate}
+                          onChange={(date) => setBulkScheduleDate(date)}
+                          minDate={new Date()}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          placeholderText="Select date for all interviews"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Mail className="h-4 w-4 inline mr-2" />
+                          Email Template
+                        </label>
+                        <select
+                          value={bulkEmailTemplate}
+                          onChange={(e) => setBulkEmailTemplate(e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        >
+                          <option value="professional">Professional</option>
+                          <option value="casual">Casual</option>
+                          <option value="technical">Technical</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Email Preview */}
+                    {candidates.filter(c => c.selected).length > 0 && bulkScheduleDate && (
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2 flex items-center">
+                          <Mail className="h-4 w-4 mr-2" />
+                          Email Preview
+                        </h4>
+                        <div className="p-4 bg-gray-50 rounded-lg border text-sm">
+                          <div className="space-y-2">
+                            <p><strong>Subject:</strong> Interview Confirmation - {os.getenv('COMPANY_NAME', 'Your Company')}</p>
+                            <p><strong>Template:</strong> {bulkEmailTemplate}</p>
+                            <p><strong>Date:</strong> {bulkScheduleDate.toLocaleDateString()}</p>
+                            <p><strong>Time Slots:</strong> Starting from 9:00 AM (30-minute intervals)</p>
+                            <div className="mt-3 p-3 bg-white rounded border-l-4 border-purple-500">
+                              <p className="text-gray-700 italic">
+                                "Dear [Candidate Name], We're excited to schedule your interview for {bulkScheduleDate.toLocaleDateString()} at [Time]. 
+                                Please confirm your attendance..."
+                              </p>
+                            </div>
+                            <p className="text-gray-600 mt-2">
+                              Personalized emails will be sent to each selected candidate with their specific interview time.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Schedule Button */}
+                    <div className="flex justify-end pt-4 border-t border-gray-200">
+                      <button
+                        onClick={bulkScheduleInterviews}
+                        disabled={candidates.filter(c => c.selected).length === 0 || !bulkScheduleDate || status.isScheduling}
+                        className="py-3 px-6 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                      >
+                        {status.isScheduling ? (
+                          <>
+                            <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                            Scheduling...
+                          </>
+                        ) : (
+                          <>
+                            <Calendar className="h-5 w-5 mr-2" />
+                            Schedule {candidates.filter(c => c.selected).length} Interviews
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
 
         {/* Bulk Interview Scheduling Component */}
-        {candidates.length > 0 && (
-          <div className="mt-8">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 flex items-center">
-                  <Calendar className="h-5 w-5 mr-2 text-purple-600" />
-                  Bulk Interview Scheduling
-                </h2>
-                <button
-                  onClick={() => setShowBulkScheduler(!showBulkScheduler)}
-                  className="py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors flex items-center"
-                >
-                  {showBulkScheduler ? 'Hide' : 'Show'} Scheduler
-                </button>
-              </div>
-
-              {showBulkScheduler && (
-                <div className="space-y-6">
-                  {/* Auto-selection Controls */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Minimum Score
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={minScore}
-                        onChange={(e) => setMinScore(Number(e.target.value))}
-                        className="w-full p-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Max Candidates
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={maxCandidates}
-                        onChange={(e) => setMaxCandidates(Number(e.target.value))}
-                        className="w-full p-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        onClick={autoSelectCandidates}
-                        className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
-                      >
-                        <Star className="h-4 w-4 mr-2" />
-                        Auto Select
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Selected Candidates Summary */}
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <h3 className="font-medium text-gray-900 mb-2">
-                      Selected Candidates ({candidates.filter(c => c.selected).length})
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {candidates.filter(c => c.selected).map(candidate => (
-                        <span
-                          key={candidate.id}
-                          className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm flex items-center"
-                        >
-                          {candidate.name} ({candidate.score})
-                          <button
-                            onClick={() => toggleCandidateSelection(candidate.id)}
-                            className="ml-2 text-blue-600 hover:text-blue-800"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Bulk Scheduling Controls */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Interview Date
-                      </label>
-                      <DatePicker
-                        selected={bulkScheduleDate}
-                        onChange={(date) => setBulkScheduleDate(date)}
-                        minDate={new Date()}
-                        className="w-full p-2 border border-gray-300 rounded-lg"
-                        placeholderText="Select date for all interviews"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Email Template
-                      </label>
-                      <select
-                        value={bulkEmailTemplate}
-                        onChange={(e) => setBulkEmailTemplate(e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded-lg"
-                      >
-                        <option value="professional">Professional</option>
-                        <option value="casual">Casual</option>
-                        <option value="technical">Technical</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Email Preview */}
-                  {candidates.filter(c => c.selected).length > 0 && bulkScheduleDate && (
-                    <div>
-                      <h3 className="font-medium text-gray-900 mb-2">Email Preview</h3>
-                      <div className="p-4 bg-gray-50 rounded-lg border text-sm">
-                        <p><strong>Subject:</strong> Interview Confirmation - Your Company</p>
-                        <p><strong>Template:</strong> {bulkEmailTemplate}</p>
-                        <p><strong>Date:</strong> {bulkScheduleDate.toLocaleDateString()}</p>
-                        <p><strong>Time Slots:</strong> Starting from 9:00 AM (30-minute intervals)</p>
-                        <p className="mt-2 text-gray-600">
-                          Personalized emails will be sent to each selected candidate with their specific interview time.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Schedule Button */}
-                  <div className="flex justify-end">
-                    <button
-                      onClick={bulkScheduleInterviews}
-                      disabled={candidates.filter(c => c.selected).length === 0 || !bulkScheduleDate || status.isScheduling}
-                      className="py-3 px-6 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-                    >
-                      {status.isScheduling ? (
-                        <>
-                          <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                          Scheduling...
-                        </>
-                      ) : (
-                        <>
-                          <Calendar className="h-5 w-5 mr-2" />
-                          Schedule {candidates.filter(c => c.selected).length} Interviews
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Scheduled Interviews Summary */}
         {scheduledInterviews.length > 0 && (
