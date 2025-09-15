@@ -8,12 +8,12 @@ from flask_cors import CORS
 import os
 import tempfile
 import logging
-from optimized_agents import HRAgentCrew, OptimizedHRSystem
+from optimized_agents import HRAgentCrew
 from werkzeug.utils import secure_filename
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:5174"])
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,16 +41,8 @@ def health_check():
 def process_resumes():
     """
     Process uploaded resumes against job description
-    
-    Expected form data:
-    - job_description: Text content of the job description
-    - resumes: List of PDF files
-    
-    Returns:
-    - JSON array of ranked candidate objects
     """
     try:
-        # Validate request
         if 'job_description' not in request.form:
             return jsonify({"error": "Job description is required"}), 400
         
@@ -66,7 +58,6 @@ def process_resumes():
         if not uploaded_files or len(uploaded_files) == 0:
             return jsonify({"error": "At least one resume file is required"}), 400
         
-        # Save uploaded files
         saved_files = []
         for file in uploaded_files:
             if file and file.filename and allowed_file(file.filename):
@@ -81,10 +72,8 @@ def process_resumes():
         
         logger.info(f"Processing {len(saved_files)} resumes against job description")
         
-        # Process resumes using AI agents
         result = hr_crew.process_resumes(job_description, saved_files)
         
-        # Clean up uploaded files
         for filepath in saved_files:
             try:
                 os.remove(filepath)
@@ -111,9 +100,10 @@ def draft_email():
 
         candidate = data['candidate']
         interview_details = data['interview_details']
-        template = data.get('template', 'professional')
+        
+        # REMOVED: template variable
 
-        draft = hr_crew.draft_email(candidate, interview_details, template)
+        draft = hr_crew.draft_email(candidate, interview_details)
         return jsonify({"draft": draft})
     except Exception as e:
         logger.error(f"Error drafting email: {str(e)}")
@@ -147,17 +137,6 @@ def get_availability():
 def schedule_interview():
     """
     Schedule an interview for a selected candidate
-
-    Expected JSON payload:
-    {
-        "candidate": {"name": "John Doe", "email": "john@example.com"},
-        "start_time": "2025-10-26T10:00:00",
-        "end_time": "2025-10-26T10:30:00",
-        "template": "professional"
-    }
-
-    Returns:
-    - Success message with scheduling details
     """
     try:
         data = request.get_json()
@@ -168,15 +147,14 @@ def schedule_interview():
         candidate = data['candidate']
         start_time = data['start_time']
         end_time = data['end_time']
-        template = data.get('template', 'professional')
+        # REMOVED: template variable
 
         if not isinstance(candidate, dict) or 'name' not in candidate or 'email' not in candidate:
             return jsonify({"error": "Candidate must have name and email"}), 400
 
         logger.info(f"Scheduling interview for {candidate['name']} at {start_time}")
 
-        # Schedule interview using AI agents
-        result = hr_crew.schedule_interview(candidate, start_time, end_time, template)
+        result = hr_crew.schedule_interview(candidate, start_time, end_time)
 
         logger.info("Successfully scheduled interview and sent confirmation email")
 
@@ -186,38 +164,8 @@ def schedule_interview():
         logger.error(f"Error scheduling interview: {str(e)}")
         return jsonify({"error": "Internal server error occurred while scheduling interview"}), 500
 
-@app.route('/api/interviews', methods=['GET'])
-def get_scheduled_interviews():
-    """
-    Get all scheduled interviews
-    
-    Returns:
-    - List of scheduled interviews
-    """
-    try:
-        # In a real implementation, this would fetch from a database
-        # For now, return mock data or implement with calendar API
-        interviews = hr_crew.get_scheduled_interviews()
-        return jsonify({"interviews": interviews})
-    except Exception as e:
-        logger.error(f"Error fetching interviews: {str(e)}")
-        return jsonify({"error": "Internal server error occurred while fetching interviews"}), 500
+# Error handlers    
 
-@app.route('/api/interviews/<interview_id>', methods=['PUT'])
-def update_interview_status():
-    """
-    Update interview status (scheduled, completed, cancelled)
-    """
-    try:
-        data = request.get_json()
-        if not data or 'status' not in data:
-            return jsonify({"error": "Status is required"}), 400
-        
-        # Implementation would update the interview status
-        return jsonify({"message": "Interview status updated successfully"})
-    except Exception as e:
-        logger.error(f"Error updating interview status: {str(e)}")
-        return jsonify({"error": "Internal server error occurred while updating interview"}), 500
 @app.errorhandler(413)
 def too_large(e):
     """Handle file too large error"""

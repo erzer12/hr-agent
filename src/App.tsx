@@ -52,7 +52,7 @@ function App() {
   const [isSchedulingModalOpen, setIsSchedulingModalOpen] = useState(false);
   const [draftEmail, setDraftEmail] = useState('');
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [emailTemplate, setEmailTemplate] = useState('professional');
+  // REMOVED: emailTemplate state
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
   
@@ -60,8 +60,9 @@ function App() {
   const [minScore, setMinScore] = useState<number>(70);
   const [maxCandidates, setMaxCandidates] = useState<number>(5);
   const [bulkScheduleDate, setBulkScheduleDate] = useState<Date | null>(null);
-  const [bulkEmailTemplate, setBulkEmailTemplate] = useState('professional');
+  // REMOVED: bulkEmailTemplate state
   const [showBulkScheduler, setShowBulkScheduler] = useState(false);
+  const [bulkScheduleStartTime, setBulkScheduleStartTime] = useState('09:00');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -151,10 +152,15 @@ function App() {
     try {
       const newInterviews: ScheduledInterview[] = [];
       
+      const [startHour, startMinute] = bulkScheduleStartTime.split(':').map(Number);
+
       for (let i = 0; i < selectedCandidates.length; i++) {
         const candidate = selectedCandidates[i];
+        
         const startDateTime = new Date(bulkScheduleDate);
-        startDateTime.setHours(9 + i, 0, 0, 0); // Schedule at 9 AM, 10 AM, etc.
+        startDateTime.setHours(startHour, startMinute, 0, 0);
+        startDateTime.setMinutes(startDateTime.getMinutes() + (i * 30));
+
         const endDateTime = new Date(startDateTime);
         endDateTime.setMinutes(endDateTime.getMinutes() + 30);
 
@@ -167,7 +173,7 @@ function App() {
             candidate: candidate,
             start_time: startDateTime.toISOString(),
             end_time: endDateTime.toISOString(),
-            template: bulkEmailTemplate,
+            // REMOVED: template key
           }),
         });
 
@@ -304,7 +310,7 @@ function App() {
           candidate: selectedCandidate,
           start_time: startDateTime.toISOString(),
           end_time: endDateTime.toISOString(),
-          template: emailTemplate,
+          // REMOVED: template key
         }),
       });
 
@@ -335,10 +341,8 @@ function App() {
     }
   };
   
-  // Memoize available slots for the selected date to prevent re-calculation
   const availableSlotsForSelectedDate = useMemo(() => {
     if (!selectedDate) return [];
-    // Format the selected date to YYYY-MM-DD for comparison
     const dateString = selectedDate.toISOString().split('T')[0];
     const dayAvailability = availability.find(day => day.date === dateString);
     return dayAvailability ? dayAvailability.slots : [];
@@ -364,10 +368,10 @@ function App() {
                 date: selectedDate.toLocaleDateString(),
                 time: startDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 timezone: 'EST',
-                location: 'Remote via Google Meet', // Added location for MapPin
+                location: 'Remote via Google Meet',
                 meeting_link: 'TBD'
               },
-              template: emailTemplate
+              // REMOVED: template key
             }),
           });
           const data = await response.json();
@@ -378,13 +382,12 @@ function App() {
       };
       fetchDraft();
     }
-  }, [selectedDate, selectedTime, selectedCandidate, emailTemplate]);
+  }, [selectedDate, selectedTime, selectedCandidate]);
 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <div className="container mx-auto px-6 py-8">
-        {/* Header and Status Bar remain the same */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">HR AI Agent Dashboard</h1>
           <p className="text-gray-600">Autonomous resume screening and interview scheduling</p>
@@ -407,7 +410,6 @@ function App() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Inputs Section remains the same */}
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
@@ -490,7 +492,6 @@ function App() {
             </button>
           </div>
 
-          {/* Right Column: Candidate Review Panel */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
               <User className="h-5 w-5 mr-2 text-emerald-600" />
@@ -504,242 +505,234 @@ function App() {
                 <p className="text-sm text-gray-400 mt-1">Upload resumes and process them to see ranked candidates here.</p>
               </div>
             ) : (
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
-                {candidates.map((candidate) => (
-                  <div
-                    key={candidate.id}
-                    // Card style changes when selected
-                    className={`border rounded-lg p-4 transition-all ${
-                        candidate.selected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                       <div className="flex items-start flex-1 min-w-0">
-                          {/* Added selection button with Check icon */}
-                          <button onClick={() => toggleCandidateSelection(candidate.id)} className={`mr-4 mt-1 flex-shrink-0 h-6 w-6 border-2 rounded ${candidate.selected ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 text-transparent'} flex items-center justify-center transition-colors`}>
-                              <Check className="h-4 w-4" />
-                          </button>
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900">{candidate.name}</h3>
-                            <div className="space-y-1 mt-2 mb-3">
-                              <div className="flex items-center text-sm text-gray-600">
-                                <Mail className="h-4 w-4 mr-2" />
-                                <span className="truncate">{candidate.email}</span>
-                              </div>
-                              {candidate.phone && (
+              <>
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                  {candidates.map((candidate) => (
+                    <div
+                      key={candidate.id}
+                      className={`border rounded-lg p-4 transition-all ${
+                          candidate.selected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                          <div className="flex items-start flex-1 min-w-0">
+                            <button onClick={() => toggleCandidateSelection(candidate.id)} className={`mr-4 mt-1 flex-shrink-0 h-6 w-6 border-2 rounded ${candidate.selected ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300 text-transparent'} flex items-center justify-center transition-colors`}>
+                                <Check className="h-4 w-4" />
+                            </button>
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-gray-900">{candidate.name}</h3>
+                              <div className="space-y-1 mt-2 mb-3">
                                 <div className="flex items-center text-sm text-gray-600">
-                                  <Phone className="h-4 w-4 mr-2" />
-                                  {candidate.phone}
+                                  <Mail className="h-4 w-4 mr-2" />
+                                  <span className="truncate">{candidate.email}</span>
                                 </div>
-                              )}
-                            </div>
-
-                            <div className="mb-3">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-sm font-medium text-gray-700">Match Score</span>
-                                <span className="text-lg font-bold text-blue-600">{candidate.score}/100</span>
+                                {candidate.phone && (
+                                  <div className="flex items-center text-sm text-gray-600">
+                                    <Phone className="h-4 w-4 mr-2" />
+                                    {candidate.phone}
+                                  </div>
+                                )}
                               </div>
-                              <div className="w-full bg-gray-200 rounded-full h-2">
-                                <div
-                                  className="bg-blue-600 h-2 rounded-full transition-all"
-                                  style={{ width: `${candidate.score}%` }}
-                                ></div>
-                              </div>
-                            </div>
 
-                            <div>
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Key Highlights:</h4>
-                              <ul className="text-sm text-gray-600 space-y-1">
-                                {candidate.summary.map((point, index) => (
-                                  <li key={index} className="flex items-start">
-                                    <span className="text-blue-500 mr-2 mt-1 flex-shrink-0">•</span>
-                                    <span>{point}</span>
-                                  </li>
-                                ))}
-                              </ul>
+                              <div className="mb-3">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-sm font-medium text-gray-700">Match Score</span>
+                                  <span className="text-lg font-bold text-blue-600">{candidate.score}/100</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="bg-blue-600 h-2 rounded-full transition-all"
+                                    style={{ width: `${candidate.score}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+
+                              <div>
+                                <h4 className="text-sm font-medium text-gray-700 mb-2">Key Highlights:</h4>
+                                <ul className="text-sm text-gray-600 space-y-1">
+                                  {candidate.summary.map((point, index) => (
+                                    <li key={index} className="flex items-start">
+                                      <span className="text-blue-500 mr-2 mt-1 flex-shrink-0">•</span>
+                                      <span>{point}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             </div>
                           </div>
-                       </div>
-                      <button
-                        onClick={() => openSchedulingModal(candidate)}
-                        className="ml-4 flex-shrink-0 py-2 px-4 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-                      >
-                        <Calendar className="h-5 w-5 mr-2" />
-                        Schedule
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Bulk Selection Component */}
-              <div className="mt-6 border-t border-gray-200 pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <Star className="h-5 w-5 mr-2 text-purple-600" />
-                    Bulk Selection & Scheduling
-                  </h3>
-                  <button
-                    onClick={() => setShowBulkScheduler(!showBulkScheduler)}
-                    className="py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors flex items-center text-sm"
-                  >
-                    {showBulkScheduler ? 'Hide' : 'Show'} Bulk Scheduler
-                  </button>
-                </div>
-
-                {showBulkScheduler && (
-                  <div className="space-y-4">
-                    {/* Score Range Selection */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Minimum Score
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={minScore}
-                          onChange={(e) => setMinScore(Number(e.target.value))}
-                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Max Candidates
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="20"
-                          value={maxCandidates}
-                          onChange={(e) => setMaxCandidates(Number(e.target.value))}
-                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        />
-                      </div>
-                      <div className="flex items-end">
                         <button
-                          onClick={autoSelectCandidates}
-                          className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
+                          onClick={() => openSchedulingModal(candidate)}
+                          className="ml-4 flex-shrink-0 py-2 px-4 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
                         >
-                          <Star className="h-4 w-4 mr-2" />
-                          Auto Select
+                          <Calendar className="h-5 w-5 mr-2" />
+                          Schedule
                         </button>
                       </div>
                     </div>
+                  ))}
+                </div>
 
-                    {/* Selected Candidates Summary */}
-                    <div className="p-4 bg-blue-50 rounded-lg">
-                      <h4 className="font-medium text-gray-900 mb-2">
-                        Selected Candidates ({candidates.filter(c => c.selected).length})
-                      </h4>
-                      <div className="flex flex-wrap gap-2">
-                        {candidates.filter(c => c.selected).map(candidate => (
-                          <span
-                            key={candidate.id}
-                            className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm flex items-center"
+                <div className="mt-6 border-t border-gray-200 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                      <Star className="h-5 w-5 mr-2 text-purple-600" />
+                      Bulk Selection & Scheduling
+                    </h3>
+                    <button
+                      onClick={() => setShowBulkScheduler(!showBulkScheduler)}
+                      className="py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors flex items-center text-sm"
+                    >
+                      {showBulkScheduler ? 'Hide' : 'Show'} Bulk Scheduler
+                    </button>
+                  </div>
+
+                  {showBulkScheduler && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Minimum Score
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={minScore}
+                            onChange={(e) => setMinScore(Number(e.target.value))}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Max Candidates
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            value={maxCandidates}
+                            onChange={(e) => setMaxCandidates(Number(e.target.value))}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <button
+                            onClick={autoSelectCandidates}
+                            className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
                           >
-                            {candidate.name} ({candidate.score})
-                            <button
-                              onClick={() => toggleCandidateSelection(candidate.id)}
-                              className="ml-2 text-blue-600 hover:text-blue-800"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Date and Time Selection */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          <Calendar className="h-4 w-4 inline mr-2" />
-                          Interview Date
-                        </label>
-                        <DatePicker
-                          selected={bulkScheduleDate}
-                          onChange={(date) => setBulkScheduleDate(date)}
-                          minDate={new Date()}
-                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                          placeholderText="Select date for all interviews"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          <Mail className="h-4 w-4 inline mr-2" />
-                          Email Template
-                        </label>
-                        <select
-                          value={bulkEmailTemplate}
-                          onChange={(e) => setBulkEmailTemplate(e.target.value)}
-                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        >
-                          <option value="professional">Professional</option>
-                          <option value="casual">Casual</option>
-                          <option value="technical">Technical</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Email Preview */}
-                    {candidates.filter(c => c.selected).length > 0 && bulkScheduleDate && (
-                      <div>
-                        <h4 className="font-medium text-gray-900 mb-2 flex items-center">
-                          <Mail className="h-4 w-4 mr-2" />
-                          Email Preview
-                        </h4>
-                        <div className="p-4 bg-gray-50 rounded-lg border text-sm">
-                          <div className="space-y-2">
-                            <p><strong>Subject:</strong> Interview Confirmation - {os.getenv('COMPANY_NAME', 'Your Company')}</p>
-                            <p><strong>Template:</strong> {bulkEmailTemplate}</p>
-                            <p><strong>Date:</strong> {bulkScheduleDate.toLocaleDateString()}</p>
-                            <p><strong>Time Slots:</strong> Starting from 9:00 AM (30-minute intervals)</p>
-                            <div className="mt-3 p-3 bg-white rounded border-l-4 border-purple-500">
-                              <p className="text-gray-700 italic">
-                                "Dear [Candidate Name], We're excited to schedule your interview for {bulkScheduleDate.toLocaleDateString()} at [Time]. 
-                                Please confirm your attendance..."
-                              </p>
-                            </div>
-                            <p className="text-gray-600 mt-2">
-                              Personalized emails will be sent to each selected candidate with their specific interview time.
-                            </p>
-                          </div>
+                            <Star className="h-4 w-4 mr-2" />
+                            Auto Select
+                          </button>
                         </div>
                       </div>
-                    )}
 
-                    {/* Schedule Button */}
-                    <div className="flex justify-end pt-4 border-t border-gray-200">
-                      <button
-                        onClick={bulkScheduleInterviews}
-                        disabled={candidates.filter(c => c.selected).length === 0 || !bulkScheduleDate || status.isScheduling}
-                        className="py-3 px-6 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-                      >
-                        {status.isScheduling ? (
-                          <>
-                            <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                            Scheduling...
-                          </>
-                        ) : (
-                          <>
-                            <Calendar className="h-5 w-5 mr-2" />
-                            Schedule {candidates.filter(c => c.selected).length} Interviews
-                          </>
-                        )}
-                      </button>
+                      <div className="p-4 bg-blue-50 rounded-lg">
+                        <h4 className="font-medium text-gray-900 mb-2">
+                          Selected Candidates ({candidates.filter(c => c.selected).length})
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {candidates.filter(c => c.selected).map(candidate => (
+                            <span
+                              key={candidate.id}
+                              className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm flex items-center"
+                            >
+                              {candidate.name} ({candidate.score})
+                              <button
+                                onClick={() => toggleCandidateSelection(candidate.id)}
+                                className="ml-2 text-blue-600 hover:text-blue-800"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <Calendar className="h-4 w-4 inline mr-2" />
+                            Interview Date
+                          </label>
+                          <DatePicker
+                            selected={bulkScheduleDate}
+                            onChange={(date) => setBulkScheduleDate(date)}
+                            minDate={new Date()}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            placeholderText="Select interview date"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <Clock className="h-4 w-4 inline mr-2" />
+                            Start Time
+                          </label>
+                          <select
+                            value={bulkScheduleStartTime}
+                            onChange={(e) => setBulkScheduleStartTime(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          >
+                            {Array.from({ length: 17 }, (_, i) => i + 8).flatMap(hour => ([
+                              <option key={`${hour}:00`} value={`${hour.toString().padStart(2, '0')}:00`}>{new Date(0, 0, 0, hour, 0).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</option>,
+                              hour < 17 && <option key={`${hour}:30`} value={`${hour.toString().padStart(2, '0')}:30`}>{new Date(0, 0, 0, hour, 30).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</option>
+                            ]))}
+                          </select>
+                        </div>
+                        {/* REMOVED: Email Template dropdown */}
+                      </div>
+
+                      {candidates.filter(c => c.selected).length > 0 && bulkScheduleDate && (
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-2 flex items-center">
+                            <Mail className="h-4 w-4 mr-2" />
+                            Email Preview
+                          </h4>
+                          <div className="p-4 bg-gray-50 rounded-lg border text-sm">
+                            <div className="space-y-2">
+                              <p><strong>Subject:</strong> Interview Confirmation - {'Your Company'}</p>
+                              <p><strong>Date:</strong> {bulkScheduleDate.toLocaleDateString()}</p>
+                              <p><strong>Time Slots:</strong> Starting from {new Date(`1970-01-01T${bulkScheduleStartTime}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} (30-minute intervals)</p>
+                              <div className="mt-3 p-3 bg-white rounded border-l-4 border-purple-500">
+                                <p className="text-gray-700 italic">
+                                  "Dear [Candidate Name], We're excited to schedule your interview for {bulkScheduleDate.toLocaleDateString()} at [Time]. 
+                                  Please confirm your attendance..."
+                                </p>
+                              </div>
+                              <p className="text-gray-600 mt-2">
+                                Personalized emails will be sent to each selected candidate with their specific interview time.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end pt-4 border-t border-gray-200">
+                        <button
+                          onClick={bulkScheduleInterviews}
+                          disabled={candidates.filter(c => c.selected).length === 0 || !bulkScheduleDate || status.isScheduling}
+                          className="py-3 px-6 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                        >
+                          {status.isScheduling ? (
+                            <>
+                              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                              Scheduling...
+                            </>
+                          ) : (
+                            <>
+                              <Calendar className="h-5 w-5 mr-2" />
+                              Schedule {candidates.filter(c => c.selected).length} Interviews
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
 
-        {/* Bulk Interview Scheduling Component */}
-
-        {/* Scheduled Interviews Summary */}
         {scheduledInterviews.length > 0 && (
           <div className="mt-8">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -784,7 +777,6 @@ function App() {
           </div>
         )}
 
-        {/* Google Calendar Integration */}
         <div className="mt-8">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -826,14 +818,12 @@ function App() {
             )}
           </div>
         </div>
-
-        {/* UPDATED Scheduling Modal */}
+        
         {isSchedulingModalOpen && selectedCandidate && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Schedule Interview for {selectedCandidate.name}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Left side: Date, Time, Location */}
                 <div>
                   <h3 className="font-semibold text-lg mb-4">1. Select Date & Time</h3>
                   <div className="mb-4">
@@ -842,7 +832,7 @@ function App() {
                       selected={selectedDate}
                       onChange={(date) => {
                           setSelectedDate(date);
-                          setSelectedTime(''); // Reset time when date changes
+                          setSelectedTime('');
                           setSelectedSlot(null);
                       }}
                       minDate={new Date()}
@@ -855,28 +845,28 @@ function App() {
 
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
-                        <Clock className="h-4 w-4 mr-2" />
-                        Available Times
+                      <Clock className="h-4 w-4 mr-2" />
+                      Available Times
                     </label>
                     <div className="grid grid-cols-3 gap-2 mt-2">
-                        {availableSlotsForSelectedDate.length > 0 ? (
-                            availableSlotsForSelectedDate.map(time => (
-                                <button
-                                    key={time}
-                                    onClick={() => {
-                                        setSelectedTime(time);
-                                        setSelectedSlot(time);
-                                    }}
-                                    className={`p-2 border rounded-lg text-sm transition-colors ${
-                                        selectedSlot === time ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    {new Date(`1970-01-01T${time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                                </button>
-                            ))
-                        ) : (
-                            <p className="col-span-3 text-sm text-gray-500">{selectedDate ? 'No available slots for this date.' : 'Select a date to see times.'}</p>
-                        )}
+                      {availableSlotsForSelectedDate.length > 0 ? (
+                          availableSlotsForSelectedDate.map(time => (
+                            <button
+                                key={time}
+                                onClick={() => {
+                                  setSelectedTime(time);
+                                  setSelectedSlot(time);
+                                }}
+                                className={`p-2 border rounded-lg text-sm transition-colors ${
+                                  selectedSlot === time ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 hover:bg-gray-100'
+                                }`}
+                            >
+                                {new Date(`1970-01-01T${time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            </button>
+                          ))
+                      ) : (
+                          <p className="col-span-3 text-sm text-gray-500">{selectedDate ? 'No available slots for this date.' : 'Select a date to see times.'}</p>
+                      )}
                     </div>
                   </div>
                    <div className="flex items-center text-sm text-gray-600 mt-6 p-3 bg-slate-50 rounded-lg">
@@ -886,18 +876,9 @@ function App() {
                       </div>
                    </div>
                 </div>
-                {/* Right side: Email Template and Preview */}
                 <div>
                   <h3 className="font-semibold text-lg mb-4">2. Review Invitation Email</h3>
-                  <select
-                    value={emailTemplate}
-                    onChange={(e) => setEmailTemplate(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-lg mb-4"
-                  >
-                    <option value="professional">Professional</option>
-                    <option value="casual">Casual</option>
-                    <option value="technical">Technical</option>
-                  </select>
+                  {/* REMOVED: Email Template dropdown */}
                   <textarea
                     value={draftEmail || 'Select a date and time to generate the email preview...'}
                     readOnly
