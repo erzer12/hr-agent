@@ -7,10 +7,11 @@ python-dotenv
 google-generativeai
 google-api-python-client
 google-auth-oauthlib
+google-auth-httplib2
 
 # Utilities
 PyPDF2
-crewai
+crewai[tools]
 
 # Testing & Linting (Optional but good practice)
 pytest

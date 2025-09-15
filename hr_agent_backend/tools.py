@@ -16,6 +16,8 @@ from typing import List, Dict, Any, Optional, ClassVar
 import PyPDF2
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request, AuthorizedSession
+from google.auth.transport.requests import Request
+from google.auth.transport.urllib3 import AuthorizedHttp
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -162,7 +164,7 @@ class GoogleCalendarTool(BaseTool):
                             'start_time': start_time.isoformat(),
                             'end_time': end_time.isoformat(),
                             'date': check_date.strftime('%Y-%m-%d'),
-                            'time': start_time.strftime('%I:%M %p'),
+                            'time': start_time.strftime('%H:%M'),
                             'timezone': 'EST'
                         })
             
@@ -170,7 +172,15 @@ class GoogleCalendarTool(BaseTool):
             if len(available_slots) >= 20:
                 break
         
-        return available_slots
+        # Group by date for frontend consumption
+        grouped_slots = {}
+        for slot in available_slots:
+            date = slot['date']
+            if date not in grouped_slots:
+                grouped_slots[date] = []
+            grouped_slots[date].append(slot['time'])
+        
+        return [{'date': date, 'slots': times} for date, times in grouped_slots.items()]
     
     def _is_slot_available(self, start_time: datetime, end_time: datetime) -> bool:
         """
@@ -301,6 +311,7 @@ class EmailSender(BaseTool):
         """Drafts an interview confirmation email."""
         subject = f"Interview Confirmation - {self.company_name}"
         body = self._create_email_body(candidate_name, interview_details, template)
+        return body
     
     def _run(self, candidate_email: str, candidate_name: str, interview_details: Dict[str, Any], template: str = "professional") -> bool:
         """
@@ -532,24 +543,19 @@ class MockGoogleCalendarTool(GoogleCalendarTool):
     
     def _mock_find_slots(self, duration_minutes: int = 30, days_ahead: int = 5) -> List[Dict[str, Any]]:
         """Mock available slots"""
-        slots = []
+        grouped_slots = {}
         base_date = datetime.now().date() + timedelta(days=1)
         
         for day in range(days_ahead):
             if (base_date + timedelta(days=day)).weekday() < 5:  # Weekdays only
+                slot_date = base_date + timedelta(days=day)
+                date_str = slot_date.strftime('%Y-%m-%d')
+                grouped_slots[date_str] = []
+                
                 for hour in [10, 11, 14, 15]:  # 10 AM, 11 AM, 2 PM, 3 PM
-                    slot_date = base_date + timedelta(days=day)
-                    start_time = datetime.combine(slot_date, datetime.min.time().replace(hour=hour))
-                    
-                    slots.append({
-                        'start_time': start_time.isoformat(),
-                        'end_time': (start_time + timedelta(minutes=duration_minutes)).isoformat(),
-                        'date': slot_date.strftime('%Y-%m-%d'),
-                        'time': start_time.strftime('%I:%M %p'),
-                        'timezone': 'EST'
-                    })
+                    grouped_slots[date_str].append(f'{hour:02d}:00')
         
-        return slots[:10]  # Return first 10 slots
+        return [{'date': date, 'slots': times} for date, times in grouped_slots.items()]
     
     def _mock_create_event(self, **kwargs) -> Dict[str, Any]:
         """Mock event creation"""

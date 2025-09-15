@@ -19,6 +19,15 @@ interface Candidate {
   selected: boolean;
 }
 
+interface ScheduledInterview {
+  id: string;
+  candidateId: string;
+  candidateName: string;
+  candidateEmail: string;
+  date: string;
+  time: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+}
 interface ProcessingStatus {
   isProcessing: boolean;
   isScheduling: boolean;
@@ -30,6 +39,7 @@ function App() {
   const [jobDescription, setJobDescription] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
   const [status, setStatus] = useState<ProcessingStatus>({
     isProcessing: false,
     isScheduling: false,
@@ -45,6 +55,13 @@ function App() {
   const [emailTemplate, setEmailTemplate] = useState('professional');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
+  
+  // New state for bulk scheduling
+  const [minScore, setMinScore] = useState<number>(70);
+  const [maxCandidates, setMaxCandidates] = useState<number>(5);
+  const [bulkScheduleDate, setBulkScheduleDate] = useState<Date | null>(null);
+  const [bulkEmailTemplate, setBulkEmailTemplate] = useState('professional');
+  const [showBulkScheduler, setShowBulkScheduler] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -53,12 +70,23 @@ function App() {
           fetch('/api/calendar'),
           fetch('/api/availability'),
         ]);
+        
+        if (!calendarResponse.ok || !availabilityResponse.ok) {
+          throw new Error('Failed to fetch initial data');
+        }
+        
         const calendarData = await calendarResponse.json();
         const availabilityData = await availabilityResponse.json();
         setCalendarUrl(calendarData.calendar_url);
         setAvailability(availabilityData);
       } catch (error) {
         console.error("Error fetching initial data:", error);
+        setStatus({
+          isProcessing: false,
+          isScheduling: false,
+          message: 'Failed to load calendar data. Some features may not work.',
+          type: 'error'
+        });
       }
     };
     fetchData();
@@ -91,6 +119,88 @@ function App() {
     );
   };
 
+  const autoSelectCandidates = () => {
+    setCandidates(prev =>
+      prev.map(candidate => ({
+        ...candidate,
+        selected: candidate.score >= minScore
+      }))
+    );
+  };
+
+  const bulkScheduleInterviews = async () => {
+    const selectedCandidates = candidates.filter(c => c.selected).slice(0, maxCandidates);
+    
+    if (selectedCandidates.length === 0 || !bulkScheduleDate) {
+      setStatus({
+        isProcessing: false,
+        isScheduling: false,
+        message: 'Please select candidates and a date for bulk scheduling',
+        type: 'error'
+      });
+      return;
+    }
+
+    setStatus({
+      isProcessing: false,
+      isScheduling: true,
+      message: `Scheduling interviews for ${selectedCandidates.length} candidates...`,
+      type: 'info'
+    });
+
+    try {
+      const newInterviews: ScheduledInterview[] = [];
+      
+      for (let i = 0; i < selectedCandidates.length; i++) {
+        const candidate = selectedCandidates[i];
+        const startDateTime = new Date(bulkScheduleDate);
+        startDateTime.setHours(9 + i, 0, 0, 0); // Schedule at 9 AM, 10 AM, etc.
+        const endDateTime = new Date(startDateTime);
+        endDateTime.setMinutes(endDateTime.getMinutes() + 30);
+
+        const response = await fetch('/api/schedule', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            candidate: candidate,
+            start_time: startDateTime.toISOString(),
+            end_time: endDateTime.toISOString(),
+            template: bulkEmailTemplate,
+          }),
+        });
+
+        if (response.ok) {
+          newInterviews.push({
+            id: `interview-${Date.now()}-${i}`,
+            candidateId: candidate.id,
+            candidateName: candidate.name,
+            candidateEmail: candidate.email,
+            date: startDateTime.toISOString().split('T')[0],
+            time: startDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'scheduled'
+          });
+        }
+      }
+
+      setScheduledInterviews(prev => [...prev, ...newInterviews]);
+      setStatus({
+        isProcessing: false,
+        isScheduling: false,
+        message: `Successfully scheduled ${newInterviews.length} interviews`,
+        type: 'success'
+      });
+      setShowBulkScheduler(false);
+    } catch (error) {
+      setStatus({
+        isProcessing: false,
+        isScheduling: false,
+        message: 'Error during bulk scheduling. Please try again.',
+        type: 'error'
+      });
+    }
+  };
   const processResumes = async () => {
     if (!jobDescription.trim() || uploadedFiles.length === 0) {
       setStatus({
@@ -461,28 +571,261 @@ function App() {
                   </div>
                 ))}
               </div>
+
+              {/* Bulk Selection Component */}
+              <div className="mt-6 border-t border-gray-200 pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <Star className="h-5 w-5 mr-2 text-purple-600" />
+                    Bulk Selection & Scheduling
+                  </h3>
+                  <button
+                    onClick={() => setShowBulkScheduler(!showBulkScheduler)}
+                    className="py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors flex items-center text-sm"
+                  >
+                    {showBulkScheduler ? 'Hide' : 'Show'} Bulk Scheduler
+                  </button>
+                </div>
+
+                {showBulkScheduler && (
+                  <div className="space-y-4">
+                    {/* Score Range Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Minimum Score
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={minScore}
+                          onChange={(e) => setMinScore(Number(e.target.value))}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Candidates
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={maxCandidates}
+                          onChange={(e) => setMaxCandidates(Number(e.target.value))}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          onClick={autoSelectCandidates}
+                          className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
+                        >
+                          <Star className="h-4 w-4 mr-2" />
+                          Auto Select
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Selected Candidates Summary */}
+                    <div className="p-4 bg-blue-50 rounded-lg">
+                      <h4 className="font-medium text-gray-900 mb-2">
+                        Selected Candidates ({candidates.filter(c => c.selected).length})
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {candidates.filter(c => c.selected).map(candidate => (
+                          <span
+                            key={candidate.id}
+                            className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm flex items-center"
+                          >
+                            {candidate.name} ({candidate.score})
+                            <button
+                              onClick={() => toggleCandidateSelection(candidate.id)}
+                              className="ml-2 text-blue-600 hover:text-blue-800"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Date and Time Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Calendar className="h-4 w-4 inline mr-2" />
+                          Interview Date
+                        </label>
+                        <DatePicker
+                          selected={bulkScheduleDate}
+                          onChange={(date) => setBulkScheduleDate(date)}
+                          minDate={new Date()}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          placeholderText="Select date for all interviews"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Mail className="h-4 w-4 inline mr-2" />
+                          Email Template
+                        </label>
+                        <select
+                          value={bulkEmailTemplate}
+                          onChange={(e) => setBulkEmailTemplate(e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        >
+                          <option value="professional">Professional</option>
+                          <option value="casual">Casual</option>
+                          <option value="technical">Technical</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Email Preview */}
+                    {candidates.filter(c => c.selected).length > 0 && bulkScheduleDate && (
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2 flex items-center">
+                          <Mail className="h-4 w-4 mr-2" />
+                          Email Preview
+                        </h4>
+                        <div className="p-4 bg-gray-50 rounded-lg border text-sm">
+                          <div className="space-y-2">
+                            <p><strong>Subject:</strong> Interview Confirmation - {os.getenv('COMPANY_NAME', 'Your Company')}</p>
+                            <p><strong>Template:</strong> {bulkEmailTemplate}</p>
+                            <p><strong>Date:</strong> {bulkScheduleDate.toLocaleDateString()}</p>
+                            <p><strong>Time Slots:</strong> Starting from 9:00 AM (30-minute intervals)</p>
+                            <div className="mt-3 p-3 bg-white rounded border-l-4 border-purple-500">
+                              <p className="text-gray-700 italic">
+                                "Dear [Candidate Name], We're excited to schedule your interview for {bulkScheduleDate.toLocaleDateString()} at [Time]. 
+                                Please confirm your attendance..."
+                              </p>
+                            </div>
+                            <p className="text-gray-600 mt-2">
+                              Personalized emails will be sent to each selected candidate with their specific interview time.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Schedule Button */}
+                    <div className="flex justify-end pt-4 border-t border-gray-200">
+                      <button
+                        onClick={bulkScheduleInterviews}
+                        disabled={candidates.filter(c => c.selected).length === 0 || !bulkScheduleDate || status.isScheduling}
+                        className="py-3 px-6 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                      >
+                        {status.isScheduling ? (
+                          <>
+                            <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                            Scheduling...
+                          </>
+                        ) : (
+                          <>
+                            <Calendar className="h-5 w-5 mr-2" />
+                            Schedule {candidates.filter(c => c.selected).length} Interviews
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        {calendarUrl && (
+        {/* Bulk Interview Scheduling Component */}
+
+        {/* Scheduled Interviews Summary */}
+        {scheduledInterviews.length > 0 && (
           <div className="mt-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-              <Calendar className="h-5 w-5 mr-2 text-blue-600" />
-              Interview Schedule
-            </h2>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <iframe
-                src={calendarUrl}
-                style={{ border: 0 }}
-                width="100%"
-                height="600"
-                frameBorder="0"
-                scrolling="no"
-              ></iframe>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+                <CheckCircle className="h-5 w-5 mr-2 text-green-600" />
+                Scheduled Interviews ({scheduledInterviews.length})
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {scheduledInterviews.map((interview) => (
+                  <div
+                    key={interview.id}
+                    className="p-4 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <h3 className="font-medium text-gray-900">{interview.candidateName}</h3>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        interview.status === 'scheduled' ? 'bg-green-100 text-green-800' :
+                        interview.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {interview.status}
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-sm text-gray-600">
+                      <div className="flex items-center">
+                        <Calendar className="h-4 w-4 mr-2" />
+                        {new Date(interview.date).toLocaleDateString()}
+                      </div>
+                      <div className="flex items-center">
+                        <Clock className="h-4 w-4 mr-2" />
+                        {interview.time}
+                      </div>
+                      <div className="flex items-center">
+                        <Mail className="h-4 w-4 mr-2" />
+                        {interview.candidateEmail}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
+
+        {/* Google Calendar Integration */}
+        <div className="mt-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                <Calendar className="h-5 w-5 mr-2 text-blue-600" />
+                Interview Calendar
+              </h2>
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                  Scheduled ({scheduledInterviews.length})
+                </div>
+              </div>
+            </div>
+            
+            {calendarUrl ? (
+              <div className="relative">
+                <iframe
+                  src={calendarUrl}
+                  style={{ border: 0 }}
+                  width="100%"
+                  height="600"
+                  frameBorder="0"
+                  scrolling="no"
+                  className="rounded-lg"
+                ></iframe>
+                <div className="absolute top-2 right-2 bg-white bg-opacity-90 px-3 py-1 rounded-lg text-xs text-gray-600">
+                  Live Calendar - Updates automatically
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">Loading calendar...</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Calendar will show scheduled interviews and available slots
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* UPDATED Scheduling Modal */}
         {isSchedulingModalOpen && selectedCandidate && (

@@ -6,6 +6,7 @@ Reduces token usage and eliminates unnecessary LLM overhead
 import os
 import json
 import logging
+from datetime import datetime
 from typing import List, Dict, Any
 from tools import GoogleCalendarTool, EmailSender, PDFTextExtractor
 from tools import MockGoogleCalendarTool, MockEmailSender, MockPDFTextExtractor
@@ -136,3 +137,25 @@ class HRAgentCrew:
 
     def schedule_interview(self, candidate: Dict[str, Any], start_time: str, end_time: str, template: str = "professional") -> Dict[str, Any]:
         return self.optimized_system.schedule_interview(candidate, start_time, end_time, template)
+
+    def get_scheduled_interviews(self) -> List[Dict[str, Any]]:
+        """Get all scheduled interviews from calendar"""
+        try:
+            events = self.calendar_tool.list_events(days_ahead=30)
+            interviews = []
+            
+            for event in events:
+                if 'Interview:' in event.get('summary', ''):
+                    interviews.append({
+                        'id': event['id'],
+                        'title': event['summary'],
+                        'start_time': event['start']['dateTime'],
+                        'end_time': event['end']['dateTime'],
+                        'attendees': [att.get('email') for att in event.get('attendees', [])],
+                        'status': event.get('status', 'confirmed')
+                    })
+            
+            return interviews
+        except Exception as e:
+            logger.error(f"Error fetching scheduled interviews: {str(e)}")
+            return []
