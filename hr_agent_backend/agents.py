@@ -222,14 +222,28 @@ class HRAgentCrew:
             description="""
             Based on the scheduled interviews from the previous task, compose and send personalized 
             interview confirmation emails to each candidate.
-            
-            Email Requirements:
-            - Professional and welcoming tone
-            - Include all interview details (date, time, timezone)
-            - Add placeholder for meeting link
-            - Include interviewer name and company information
-            - Request confirmation from candidate
-            - Add any necessary pre-interview instructions
+
+            Use this template and fill in the placeholders:
+
+            Subject: Interview Confirmation: [Company Name] - [Candidate Name]
+
+            Dear [Candidate Name],
+
+            Thank you for your interest in the [Job Title] position at [Company Name]. We were impressed with your background and would like to invite you for an interview.
+
+            Your interview has been scheduled for:
+            - Date: [Interview Date]
+            - Time: [Interview Time] [Timezone]
+            - Interviewer: [Interviewer Name]
+
+            The interview will be conducted via [Platform/Location] and a meeting link will be sent shortly. Please take a moment to confirm your availability by replying to this email.
+
+            [Optional: Add any pre-interview instructions or required documents here.]
+
+            We look forward to speaking with you.
+
+            Best regards,
+            The [Company Name] Talent Team
             
             Send emails to all candidates and confirm delivery.
             
@@ -247,7 +261,7 @@ class HRAgentCrew:
             """,
             agent=self.agents['email_writer'],
             expected_output="JSON confirming email delivery",
-            dependencies=[scheduling_task]
+            context=[scheduling_task]
         )
         
         # Execute both tasks in sequence
