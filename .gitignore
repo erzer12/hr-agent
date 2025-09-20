@@ -23,7 +23,7 @@ dist-ssr
 *.sw?
 .env
 credentials.json
-token.json
+service_account_credentials.json
 
 # Dependency directories
 venv

@@ -4,7 +4,6 @@ Provides interfaces to external services like Google Calendar, email, and PDF pr
 """
 
 import os
-import io
 import json
 import logging
 import smtplib
@@ -13,15 +12,19 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any, Optional, ClassVar
 
-import PyPDF2
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
+# New imports for the requests library
+import requests
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+import PyPDF2
 from crewai.tools import BaseTool
+
 logger = logging.getLogger(__name__)
+
+# --- Primary Tools ---
 
 class PDFTextExtractor(BaseTool):
     """Tool to extract text content from PDF files"""
@@ -55,7 +58,7 @@ class PDFTextExtractor(BaseTool):
         return extracted_texts
 
 class GoogleCalendarTool(BaseTool):
-    """Tool to interact with Google Calendar API"""
+    """Tool to interact with Google Calendar API using a Service Account"""
     
     name: str = "Google Calendar Tool"
     description: str = "Schedule interviews and manage calendar events"
@@ -68,35 +71,35 @@ class GoogleCalendarTool(BaseTool):
         self.service = self._authenticate()
     
     def _authenticate(self):
-        """Authenticate with Google Calendar API"""
-        creds = None
+        """Authenticate with Google Calendar API using a service account and the requests library."""
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        credentials_path = os.path.join(script_dir, 'credentials.json')
-        token_path = os.getenv('GOOGLE_CALENDAR_TOKEN_PATH', 'token.json')
-        
-        if os.path.exists(token_path):
-            creds = Credentials.from_authorized_user_file(token_path, self.SCOPES)
-        
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(credentials_path):
-                    logger.error(f"Google Calendar credentials file not found: {credentials_path}")
-                    raise FileNotFoundError(f"Google Calendar credentials file not found: {credentials_path}")
-                
-                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, self.SCOPES)
-                creds = flow.run_local_server(port=8080)
-            
-            with open(token_path, 'w') as token:
-                token.write(creds.to_json())
+        key_path = os.path.join(script_dir, 'service_account_credentials.json')
+        logger.debug(f"Using service account credentials: {key_path}")
 
-        return build('calendar', 'v3', credentials=creds, cache_discovery=False)
+        if not os.path.exists(key_path):
+            logger.error(f"Service account credentials file not found: {key_path}")
+            raise FileNotFoundError(f"Service account credentials file not found: {key_path}")
+
+        try:
+            # Load credentials from the service account file.
+            creds = service_account.Credentials.from_service_account_file(
+                key_path, scopes=self.SCOPES
+            )
+
+            # Let the google-auth library handle creating a secure, authorized session.
+            authed_session = requests.Session()
+            creds.refresh(GoogleAuthRequest(session=authed_session))
+            
+            logger.debug("Successfully authenticated using service account and requests.")
+            
+            # Build the service object using the authorized session.
+            return build('calendar', 'v3', http=authed_session, cache_discovery=False)
+
+        except Exception as e:
+            logger.error(f"Failed to load service account credentials or build service: {e}")
+            raise
 
     def _run(self, action: str, **kwargs) -> Any:
-        """
-        Execute calendar operations
-        """
         try:
             if action == 'find_slots':
                 return self.find_available_slots(**kwargs)
@@ -111,26 +114,19 @@ class GoogleCalendarTool(BaseTool):
             raise
     
     def find_available_slots(self, duration_minutes: int = 30, days_ahead: int = 5) -> List[Dict[str, Any]]:
-        """
-        Find available time slots for interviews
-        """
         available_slots = []
         current_date = datetime.now().date()
         
         for i in range(days_ahead * 2):
             check_date = current_date + timedelta(days=i)
-            
-            if check_date.weekday() >= 5:
+            if check_date.weekday() >= 5: # Skip weekends
                 continue
-            
-            for hour in range(9, 17):
+            for hour in range(9, 17): # Business hours 9 AM to 5 PM
                 for minute in [0, 30]:
-                    if hour == 16 and minute == 30:
+                    if hour == 16 and minute == 30: # Last slot ends at 5 PM
                         break
-                    
                     start_time = datetime.combine(check_date, datetime.min.time().replace(hour=hour, minute=minute))
                     end_time = start_time + timedelta(minutes=duration_minutes)
-                    
                     if self._is_slot_available(start_time, end_time):
                         available_slots.append({
                             'start_time': start_time.isoformat(),
@@ -139,8 +135,7 @@ class GoogleCalendarTool(BaseTool):
                             'time': start_time.strftime('%H:%M'),
                             'timezone': 'EST'
                         })
-            
-            if len(available_slots) >= 20:
+            if len(available_slots) >= 20: # Limit the number of slots returned
                 break
         
         grouped_slots = {}
@@ -153,9 +148,6 @@ class GoogleCalendarTool(BaseTool):
         return [{'date': date, 'slots': times} for date, times in grouped_slots.items()]
     
     def _is_slot_available(self, start_time: datetime, end_time: datetime) -> bool:
-        """
-        Check if a time slot is available
-        """
         try:
             events_result = self.service.events().list(
                 calendarId='primary',
@@ -164,84 +156,47 @@ class GoogleCalendarTool(BaseTool):
                 singleEvents=True,
                 orderBy='startTime'
             ).execute()
-            
             events = events_result.get('items', [])
-            
             return len(events) == 0
-            
         except HttpError as e:
             logger.error(f"Error checking calendar availability: {str(e)}")
             return True
     
     def create_event(self, title: str, start_time: str, end_time: str, attendee_emails: List[str], description: str = "") -> Dict[str, Any]:
-        """
-        Create a calendar event
-        """
         event = {
             'summary': title,
             'description': description,
-            'start': {
-                'dateTime': start_time,
-                'timeZone': 'America/New_York',
-            },
-            'end': {
-                'dateTime': end_time,
-                'timeZone': 'America/New_York',
-            },
+            'start': {'dateTime': start_time, 'timeZone': 'America/New_York'},
+            'end': {'dateTime': end_time, 'timeZone': 'America/New_York'},
             'attendees': [{'email': email} for email in attendee_emails],
-            'reminders': {
-                'useDefault': False,
-                'overrides': [
-                    {'method': 'email', 'minutes': 24 * 60},
-                    {'method': 'popup', 'minutes': 30},
-                ],
-            },
-            # --- START: ADDED SECTION ---
-            # This tells Google Calendar to create a new Google Meet conference
-            'conferenceData': {
-                'createRequest': {
-                    'requestId': f"hr-agent-{datetime.now().timestamp()}",
-                    'conferenceSolutionKey': {
-                        'type': 'hangoutsMeet'
-                    }
-                }
-            }
-            # --- END: ADDED SECTION ---
+            'reminders': {'useDefault': False, 'overrides': [{'method': 'email', 'minutes': 24 * 60}, {'method': 'popup', 'minutes': 30}]},
+            'conferenceData': {'createRequest': {'requestId': f"hr-agent-{datetime.now().timestamp()}", 'conferenceSolutionKey': {'type': 'hangoutsMeet'}}}
         }
-        
         try:
-            # The 'conferenceDataVersion=1' parameter is required to get the link back
             created_event = self.service.events().insert(
-                calendarId='primary', 
+                calendarId='primary',
                 body=event,
-                conferenceDataVersion=1  # <-- ADDED
+                conferenceDataVersion=1
             ).execute()
-            
             logger.info(f"Event created: {created_event.get('htmlLink')}")
-            
-            return {
-                'event_id': created_event['id'],
-                'event_link': created_event.get('htmlLink'),
-                'meeting_link': created_event.get('hangoutLink', 'TBD')
-            }
-            
+            return {'event_id': created_event['id'], 'event_link': created_event.get('htmlLink'), 'meeting_link': created_event.get('hangoutLink', 'TBD')}
         except HttpError as e:
             logger.error(f"Error creating calendar event: {str(e)}")
             raise
+    
     def get_calendar_iframe_url(self) -> str:
-        """Get the public URL for the primary calendar"""
         try:
-            calendar = self.service.calendars().get(calendarId='primary').execute()
+            calendar = self.service.calendars().get(
+                calendarId='primary'
+            ).execute()
             return f"https://calendar.google.com/calendar/embed?src={calendar['id']}"
         except HttpError as e:
             logger.error(f"Error getting calendar URL: {str(e)}")
             return ""
-
+    
     def list_events(self, days_ahead: int = 7) -> List[Dict[str, Any]]:
-        """List upcoming events"""
         now = datetime.utcnow()
         time_max = now + timedelta(days=days_ahead)
-        
         try:
             events_result = self.service.events().list(
                 calendarId='primary',
@@ -250,9 +205,7 @@ class GoogleCalendarTool(BaseTool):
                 singleEvents=True,
                 orderBy='startTime'
             ).execute()
-            
             return events_result.get('items', [])
-            
         except HttpError as e:
             logger.error(f"Error listing calendar events: {str(e)}")
             return []
@@ -278,13 +231,13 @@ class EmailSender(BaseTool):
         self.company_name = os.getenv('COMPANY_NAME', 'Your Company')
         self.interviewer_name = os.getenv('INTERVIEWER_NAME', 'Hiring Manager')
 
-    def draft_email(self, candidate_name: str, candidate_email: str, interview_details: Dict[str, Any], template: str = "professional") -> str:
+    def draft_email(self, candidate_name: str, candidate_email: str, interview_details: Dict[str, Any]) -> str:
         """Drafts an interview confirmation email."""
         subject = f"Interview Confirmation - {self.company_name}"
         body = self._create_email_body(candidate_name, interview_details)
         return body
     
-    def _run(self, candidate_email: str, candidate_name: str, interview_details: Dict[str, Any], template: str = "professional") -> bool:
+    def _run(self, candidate_email: str, candidate_name: str, interview_details: Dict[str, Any]) -> bool:
         """
         Send interview confirmation email
         """
@@ -316,7 +269,7 @@ class EmailSender(BaseTool):
             logger.error(f"Error sending email to {candidate_email}: {str(e)}")
             return False
  
-    def _create_email_body(self, candidate_name: str, interview_details: Dict[str, Any], template: str = "professional") -> str:
+    def _create_email_body(self, candidate_name: str, interview_details: Dict[str, Any]) -> str:
         """Create HTML email body based on template"""
         return f"""
         <!DOCTYPE html>
@@ -377,7 +330,8 @@ class EmailSender(BaseTool):
         </html>
         """
 
-# Mock implementations for development/testing
+# --- Mock Tools for Development/Testing ---
+
 class MockPDFTextExtractor(PDFTextExtractor):
     """Mock PDF extractor for testing without actual PDF processing"""
     
@@ -454,3 +408,4 @@ class MockEmailSender(EmailSender):
         """Mock email sending"""
         logger.info(f"Mock: Would send email to {candidate_email} for interview on {interview_details.get('date', 'TBD')}")
         return True
+
