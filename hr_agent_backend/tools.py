@@ -15,7 +15,9 @@ from typing import List, Dict, Any, Optional, ClassVar
 # New imports for the requests library
 import requests
 from google.auth.transport.requests import Request as GoogleAuthRequest
-from google.oauth2 import service_account
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+import pickle
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -69,35 +71,27 @@ class GoogleCalendarTool(BaseTool):
     def __init__(self):
         super().__init__()
         self.service = self._authenticate()
-    
+
     def _authenticate(self):
-        """Authenticate with Google Calendar API using a service account and the requests library."""
+        """Authenticate with Google Calendar API using OAuth2 user credentials."""
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        key_path = os.path.join(script_dir, 'service_account_credentials.json')
-        logger.debug(f"Using service account credentials: {key_path}")
-
-        if not os.path.exists(key_path):
-            logger.error(f"Service account credentials file not found: {key_path}")
-            raise FileNotFoundError(f"Service account credentials file not found: {key_path}")
-
-        try:
-            # Load credentials from the service account file.
-            creds = service_account.Credentials.from_service_account_file(
-                key_path, scopes=self.SCOPES
-            )
-
-            # Let the google-auth library handle creating a secure, authorized session.
-            authed_session = requests.Session()
-            creds.refresh(GoogleAuthRequest(session=authed_session))
-            
-            logger.debug("Successfully authenticated using service account and requests.")
-            
-            # Build the service object using the authorized session.
-            return build('calendar', 'v3', http=authed_session, cache_discovery=False)
-
-        except Exception as e:
-            logger.error(f"Failed to load service account credentials or build service: {e}")
-            raise
+        creds = None
+        token_path = os.path.join(script_dir, 'token.pickle')
+        creds_path = os.path.join(script_dir, 'credentials.json')
+        if os.path.exists(token_path):
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(creds_path, self.SCOPES)
+                creds = flow.run_local_server(port=0)
+            # Save the credentials for the next run
+            with open(token_path, 'wb') as token:
+                pickle.dump(creds, token)
+        return build('calendar', 'v3', credentials=creds, cache_discovery=False)
 
     def _run(self, action: str, **kwargs) -> Any:
         try:
@@ -189,7 +183,21 @@ class GoogleCalendarTool(BaseTool):
             calendar = self.service.calendars().get(
                 calendarId='primary'
             ).execute()
-            return f"https://calendar.google.com/calendar/embed?src={calendar['id']}"
+            logger.info(f"Calendar API response: {calendar}")
+            calendar_id = calendar.get('id')
+            if not calendar_id:
+                # Try to get the primary calendar from calendarList
+                calendar_list = self.service.calendarList().list().execute()
+                logger.info(f"CalendarList API response: {calendar_list}")
+                for entry in calendar_list.get('items', []):
+                    if entry.get('primary'):
+                        calendar_id = entry.get('id')
+                        break
+            if calendar_id:
+                return f"https://calendar.google.com/calendar/embed?src={calendar_id}"
+            else:
+                logger.error("Could not determine calendar ID for iframe URL.")
+                return ""
         except HttpError as e:
             logger.error(f"Error getting calendar URL: {str(e)}")
             return ""

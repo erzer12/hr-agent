@@ -46,7 +46,6 @@ function App() {
     message: '',
     type: 'info'
   });
-  const [calendarUrl, setCalendarUrl] = useState('');
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isSchedulingModalOpen, setIsSchedulingModalOpen] = useState(false);
@@ -67,25 +66,18 @@ function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [calendarResponse, availabilityResponse] = await Promise.all([
-          fetch('/api/calendar'),
-          fetch('/api/availability'),
-        ]);
-        
-        if (!calendarResponse.ok || !availabilityResponse.ok) {
-          throw new Error('Failed to fetch initial data');
+        const availabilityResponse = await fetch('/api/availability');
+        if (!availabilityResponse.ok) {
+          throw new Error('Failed to fetch availability data');
         }
-        
-        const calendarData = await calendarResponse.json();
         const availabilityData = await availabilityResponse.json();
-        setCalendarUrl(calendarData.calendar_url);
         setAvailability(availabilityData);
       } catch (error) {
         console.error("Error fetching initial data:", error);
         setStatus({
           isProcessing: false,
           isScheduling: false,
-          message: 'Failed to load calendar data. Some features may not work.',
+          message: 'Failed to load availability data. Some features may not work.',
           type: 'error'
         });
       }
@@ -791,31 +783,21 @@ function App() {
                 </div>
               </div>
             </div>
-            
-            {calendarUrl ? (
-              <div className="relative">
-                <iframe
-                  src={calendarUrl}
-                  style={{ border: 0 }}
-                  width="100%"
-                  height="600"
-                  frameBorder="0"
-                  scrolling="no"
-                  className="rounded-lg"
-                ></iframe>
-                <div className="absolute top-2 right-2 bg-white bg-opacity-90 px-3 py-1 rounded-lg text-xs text-gray-600">
-                  Live Calendar - Updates automatically
-                </div>
+            <div className="relative">
+              <iframe
+                src={import.meta.env.VITE_GOOGLE_CALENDAR_URL}
+                width="100%"
+                height="600"
+                frameBorder="0"
+                scrolling="no"
+                className="rounded-lg"
+                title="Google Calendar"
+                style={{ border: 0 }}
+              ></iframe>
+              <div className="absolute top-2 right-2 bg-white bg-opacity-90 px-3 py-1 rounded-lg text-xs text-gray-600">
+                Live Calendar - Updates automatically
               </div>
-            ) : (
-              <div className="text-center py-12">
-                <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">Loading calendar...</p>
-                <p className="text-sm text-gray-400 mt-1">
-                  Calendar will show scheduled interviews and available slots
-                </p>
-              </div>
-            )}
+            </div>
           </div>
         </div>
         

@@ -63,11 +63,11 @@ class OptimizedHRSystem:
         """Get Google Calendar iframe URL"""
         return self.calendar_tool.get_calendar_iframe_url()
 
-    def draft_email(self, candidate: Dict[str, Any], interview_details: Dict[str, Any], template: str = "professional") -> str:
+    def draft_email(self, candidate: Dict[str, Any], interview_details: Dict[str, Any]) -> str:
         """Draft interview confirmation email"""
-        return self.email_sender.draft_email(candidate['name'], candidate['email'], interview_details, template)
+        return self.email_sender.draft_email(candidate['name'], candidate['email'], interview_details)
 
-    def schedule_interview(self, candidate: Dict[str, Any], start_time: str, end_time: str, template: str = "professional") -> Dict[str, Any]:
+    def schedule_interview(self, candidate: Dict[str, Any], start_time: str, end_time: str) -> Dict[str, Any]:
         """
         Schedule a single interview using direct tool calls
         """
@@ -96,8 +96,7 @@ class OptimizedHRSystem:
             email_sent = self.email_sender._run(
                 candidate['email'],
                 candidate['name'],
-                interview_details,
-                template
+                interview_details
             )
 
             return {
@@ -132,11 +131,11 @@ class HRAgentCrew:
     def get_calendar_url(self) -> str:
         return self.optimized_system.get_calendar_url()
 
-    def draft_email(self, candidate: Dict[str, Any], interview_details: Dict[str, Any], template: str = "professional") -> str:
-        return self.optimized_system.draft_email(candidate, interview_details, template)
+    def draft_email(self, candidate: Dict[str, Any], interview_details: Dict[str, Any]) -> str:
+        return self.optimized_system.draft_email(candidate, interview_details)
 
-    def schedule_interview(self, candidate: Dict[str, Any], start_time: str, end_time: str, template: str = "professional") -> Dict[str, Any]:
-        return self.optimized_system.schedule_interview(candidate, start_time, end_time, template)
+    def schedule_interview(self, candidate: Dict[str, Any], start_time: str, end_time: str) -> Dict[str, Any]:
+        return self.optimized_system.schedule_interview(candidate, start_time, end_time)
 
     def get_scheduled_interviews(self) -> List[Dict[str, Any]]:
         """Get all scheduled interviews from calendar"""
