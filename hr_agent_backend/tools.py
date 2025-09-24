@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import smtplib
+import time
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -24,6 +25,11 @@ from googleapiclient.errors import HttpError
 import PyPDF2
 from crewai.tools import BaseTool
 
+# Extra imports for SSL retry handling
+import ssl
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from http.client import RemoteDisconnected
+
 logger = logging.getLogger(__name__)
 
 # --- Primary Tools ---
@@ -35,29 +41,22 @@ class PDFTextExtractor(BaseTool):
     description: str = "Extract text content from PDF resume files for analysis"
     
     def _run(self, file_paths: List[str]) -> Dict[str, str]:
-        """
-        Extract text from PDF files
-        """
         extracted_texts = {}
-        
         for file_path in file_paths:
             try:
                 with open(file_path, 'rb') as file:
                     pdf_reader = PyPDF2.PdfReader(file)
-                    text = ""
-                    
-                    for page_num in range(len(pdf_reader.pages)):
-                        page = pdf_reader.pages[page_num]
-                        text += page.extract_text() + "\n"
-                    
+                    text = "".join(
+                        (pdf_reader.pages[p].extract_text() or "") + "\n"
+                        for p in range(len(pdf_reader.pages))
+                    )
                     extracted_texts[file_path] = text.strip()
-                    logger.info(f"Successfully extracted text from {os.path.basename(file_path)}")
-                    
+                    logger.info(f"Extracted text from {os.path.basename(file_path)}")
             except Exception as e:
                 logger.error(f"Error extracting text from {file_path}: {str(e)}")
                 extracted_texts[file_path] = f"Error extracting text: {str(e)}"
-        
         return extracted_texts
+
 
 class GoogleCalendarTool(BaseTool):
     """Tool to interact with Google Calendar API using a Service Account"""
@@ -78,20 +77,35 @@ class GoogleCalendarTool(BaseTool):
         creds = None
         token_path = os.path.join(script_dir, 'token.pickle')
         creds_path = os.path.join(script_dir, 'credentials.json')
+
         if os.path.exists(token_path):
             with open(token_path, 'rb') as token:
                 creds = pickle.load(token)
-        # If there are no (valid) credentials available, let the user log in.
+
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(creds_path, self.SCOPES)
                 creds = flow.run_local_server(port=0)
-            # Save the credentials for the next run
             with open(token_path, 'wb') as token:
                 pickle.dump(creds, token)
+
         return build('calendar', 'v3', credentials=creds, cache_discovery=False)
+
+    # --- Safe executor with retries ---
+    def _safe_execute(self, request, retries: int = 3, backoff: int = 2):
+        for attempt in range(retries):
+            try:
+                return request.execute()
+            except (ssl.SSLError, RequestsConnectionError, RemoteDisconnected) as e:
+                logger.warning(f"SSL/Connection error on attempt {attempt+1}: {e}")
+                time.sleep(backoff * (attempt + 1))
+                continue
+            except HttpError as e:
+                logger.error(f"Google API HttpError: {e}")
+                raise
+        raise RuntimeError("Failed after multiple retry attempts due to SSL/connection issues.")
 
     def _run(self, action: str, **kwargs) -> Any:
         try:
@@ -113,11 +127,11 @@ class GoogleCalendarTool(BaseTool):
         
         for i in range(days_ahead * 2):
             check_date = current_date + timedelta(days=i)
-            if check_date.weekday() >= 5: # Skip weekends
+            if check_date.weekday() >= 5:  # skip weekends
                 continue
-            for hour in range(9, 17): # Business hours 9 AM to 5 PM
+            for hour in range(9, 17):
                 for minute in [0, 30]:
-                    if hour == 16 and minute == 30: # Last slot ends at 5 PM
+                    if hour == 16 and minute == 30:
                         break
                     start_time = datetime.combine(check_date, datetime.min.time().replace(hour=hour, minute=minute))
                     end_time = start_time + timedelta(minutes=duration_minutes)
@@ -129,31 +143,28 @@ class GoogleCalendarTool(BaseTool):
                             'time': start_time.strftime('%H:%M'),
                             'timezone': 'EST'
                         })
-            if len(available_slots) >= 20: # Limit the number of slots returned
+            if len(available_slots) >= 20:
                 break
         
         grouped_slots = {}
         for slot in available_slots:
-            date = slot['date']
-            if date not in grouped_slots:
-                grouped_slots[date] = []
-            grouped_slots[date].append(slot['time'])
-        
+            grouped_slots.setdefault(slot['date'], []).append(slot['time'])
         return [{'date': date, 'slots': times} for date, times in grouped_slots.items()]
     
     def _is_slot_available(self, start_time: datetime, end_time: datetime) -> bool:
         try:
-            events_result = self.service.events().list(
-                calendarId='primary',
-                timeMin=start_time.isoformat() + 'Z',
-                timeMax=end_time.isoformat() + 'Z',
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
-            events = events_result.get('items', [])
-            return len(events) == 0
-        except HttpError as e:
-            logger.error(f"Error checking calendar availability: {str(e)}")
+            events_result = self._safe_execute(
+                self.service.events().list(
+                    calendarId='primary',
+                    timeMin=start_time.isoformat() + 'Z',
+                    timeMax=end_time.isoformat() + 'Z',
+                    singleEvents=True,
+                    orderBy='startTime'
+                )
+            )
+            return len(events_result.get('items', [])) == 0
+        except Exception as e:
+            logger.error(f"Error checking availability: {str(e)}")
             return True
     
     def create_event(self, title: str, start_time: str, end_time: str, attendee_emails: List[str], description: str = "") -> Dict[str, Any]:
@@ -163,42 +174,41 @@ class GoogleCalendarTool(BaseTool):
             'start': {'dateTime': start_time, 'timeZone': 'America/New_York'},
             'end': {'dateTime': end_time, 'timeZone': 'America/New_York'},
             'attendees': [{'email': email} for email in attendee_emails],
-            'reminders': {'useDefault': False, 'overrides': [{'method': 'email', 'minutes': 24 * 60}, {'method': 'popup', 'minutes': 30}]},
-            'conferenceData': {'createRequest': {'requestId': f"hr-agent-{datetime.now().timestamp()}", 'conferenceSolutionKey': {'type': 'hangoutsMeet'}}}
+            'reminders': {'useDefault': False, 'overrides': [
+                {'method': 'email', 'minutes': 24 * 60},
+                {'method': 'popup', 'minutes': 30}
+            ]},
+            'conferenceData': {'createRequest': {
+                'requestId': f"hr-agent-{datetime.now().timestamp()}",
+                'conferenceSolutionKey': {'type': 'hangoutsMeet'}
+            }}
         }
-        try:
-            created_event = self.service.events().insert(
+        created_event = self._safe_execute(
+            self.service.events().insert(
                 calendarId='primary',
                 body=event,
                 conferenceDataVersion=1
-            ).execute()
-            logger.info(f"Event created: {created_event.get('htmlLink')}")
-            return {'event_id': created_event['id'], 'event_link': created_event.get('htmlLink'), 'meeting_link': created_event.get('hangoutLink', 'TBD')}
-        except HttpError as e:
-            logger.error(f"Error creating calendar event: {str(e)}")
-            raise
+            )
+        )
+        logger.info(f"Event created: {created_event.get('htmlLink')}")
+        return {
+            'event_id': created_event['id'],
+            'event_link': created_event.get('htmlLink'),
+            'meeting_link': created_event.get('hangoutLink', 'TBD')
+        }
     
     def get_calendar_iframe_url(self) -> str:
         try:
-            calendar = self.service.calendars().get(
-                calendarId='primary'
-            ).execute()
-            logger.info(f"Calendar API response: {calendar}")
+            calendar = self._safe_execute(self.service.calendars().get(calendarId='primary'))
             calendar_id = calendar.get('id')
             if not calendar_id:
-                # Try to get the primary calendar from calendarList
-                calendar_list = self.service.calendarList().list().execute()
-                logger.info(f"CalendarList API response: {calendar_list}")
+                calendar_list = self._safe_execute(self.service.calendarList().list())
                 for entry in calendar_list.get('items', []):
                     if entry.get('primary'):
                         calendar_id = entry.get('id')
                         break
-            if calendar_id:
-                return f"https://calendar.google.com/calendar/embed?src={calendar_id}"
-            else:
-                logger.error("Could not determine calendar ID for iframe URL.")
-                return ""
-        except HttpError as e:
+            return f"https://calendar.google.com/calendar/embed?src={calendar_id}" if calendar_id else ""
+        except Exception as e:
             logger.error(f"Error getting calendar URL: {str(e)}")
             return ""
     
@@ -206,15 +216,17 @@ class GoogleCalendarTool(BaseTool):
         now = datetime.utcnow()
         time_max = now + timedelta(days=days_ahead)
         try:
-            events_result = self.service.events().list(
-                calendarId='primary',
-                timeMin=now.isoformat() + 'Z',
-                timeMax=time_max.isoformat() + 'Z',
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            events_result = self._safe_execute(
+                self.service.events().list(
+                    calendarId='primary',
+                    timeMin=now.isoformat() + 'Z',
+                    timeMax=time_max.isoformat() + 'Z',
+                    singleEvents=True,
+                    orderBy='startTime'
+                )
+            )
             return events_result.get('items', [])
-        except HttpError as e:
+        except Exception as e:
             logger.error(f"Error listing calendar events: {str(e)}")
             return []
 
@@ -408,12 +420,13 @@ class MockEmailSender(EmailSender):
     """Mock email sender for testing without actual email sending"""
     
     def __init__(self):
-        # Initialize without email credentials
+        super().__init__()  # ensures BaseTool / Pydantic init runs
         self.company_name = 'Demo Company'
         self.interviewer_name = 'Demo Interviewer'
     
     def _run(self, candidate_email: str, candidate_name: str, interview_details: Dict[str, Any]) -> bool:
         """Mock email sending"""
-        logger.info(f"Mock: Would send email to {candidate_email} for interview on {interview_details.get('date', 'TBD')}")
+        logger.info(
+            f"Mock: Would send email to {candidate_email} for interview on {interview_details.get('date', 'TBD')}"
+        )
         return True
-

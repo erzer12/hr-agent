@@ -794,9 +794,6 @@ function App() {
                 title="Google Calendar"
                 style={{ border: 0 }}
               ></iframe>
-              <div className="absolute top-2 right-2 bg-white bg-opacity-90 px-3 py-1 rounded-lg text-xs text-gray-600">
-                Live Calendar - Updates automatically
-              </div>
             </div>
           </div>
         </div>

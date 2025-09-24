@@ -12,7 +12,14 @@ This application streamlines HR workflows by:
 
 The system uses Google Gemini API for efficient resume parsing and analysis, with optimized token usage for cost-effective operation.
 
+## 🛠️ Tech Stack
+Frontend: React, Vite, Tailwind CSS
+Backend: Flask, Python
+APIs and Services: Gemini API, Google Calendar API, Gmail API (via SMTP)
+
 ## 🏗️ System Architecture
+
+The application is composed of a React frontend and a Flask backend. The backend is where the core AI agent logic resides.
 
 ```
 ┌─────────────────┐    HTTP/JSON    ┌─────────────────┐   Gemini API ┌─────────────────┐
@@ -33,14 +40,48 @@ The system uses Google Gemini API for efficient resume parsing and analysis, wit
                                     └─────────────────┘            └─────────────────┘
 ```
 
-### Data Flow
+### Frontend
 
-1. **Upload Phase**: User uploads PDFs and job description through React frontend
-2. **Processing Phase**: Flask API uses Gemini API to analyze resumes vs. job requirements
-3. **Ranking Phase**: Gemini generates candidate scores, summaries, and contact information
-4. **Selection Phase**: HR user reviews ranked candidates and selects interview candidates
-5. **Scheduling Phase**: Direct API calls find calendar slots and create interview events
-6. **Communication Phase**: Automated personalized emails sent to selected candidates
+The frontend is a single-page application built with React and Vite. It provides a user interface for:
+- Entering a job description.
+- Uploading resumes (in PDF format).
+- Viewing a ranked list of candidates.
+- Selecting candidates for interviews.
+
+### Backend
+
+The backend is a Flask application that exposes a REST API for the frontend. It's responsible for:
+- Processing the job description and resumes.
+- Calling the Google Gemini API to analyze and rank candidates.
+- Scheduling interviews using the Google Calendar API.
+- Sending email notifications.
+
+### Agent Architecture and Flow
+
+The core of the application is the AI agent system in the backend. The agent is designed to be modular and extensible. The main components are:
+
+1.  **`app.py`**: The main entry point for the Flask application. It defines the API endpoints and orchestrates the overall workflow.
+2.  **`agents.py`**: This file contains the core agent logic. The `ResumeScreenerAgent` is responsible for taking the job description and resumes, and then using the `gemini_parser` to analyze and rank the candidates.
+3.  **`gemini_parser.py`**: This module interacts directly with the Google Gemini API. It's responsible for constructing the prompts, sending them to the API, and parsing the JSON responses. It's optimized for token efficiency by using truncated inputs and structured prompts.
+4.  **`tools.py`**: This file contains a collection of tools that the agent can use. These tools are simple Python functions that perform specific tasks, such as:
+    - `pdf_text_extractor`: Extracts text from PDF files.
+    - `GoogleCalendarTool`: A tool for finding available slots and creating events in Google Calendar.
+    - `send_email`: A tool for sending emails.
+
+The agent flow is as follows:
+
+1.  The user uploads a job description and resumes through the React frontend.
+2.  The frontend sends a POST request to the `/api/process` endpoint on the Flask backend.
+3.  The `app.py` receives the request and calls the `ResumeScreenerAgent` in `agents.py`.
+4.  The `ResumeScreenerAgent` uses the `pdf_text_extractor` tool to extract the text from the resumes.
+5.  The agent then calls the `gemini_parser` to send the job description and resume text to the Google Gemini API.
+6.  The Gemini API returns a ranked list of candidates with scores and summaries.
+7.  The `ResumeScreenerAgent` returns the ranked list to the `app.py`.
+8.  The `app.py` sends the ranked list back to the frontend, which displays it to the user.
+9.  The user selects candidates for interviews and clicks the "Schedule Interviews" button.
+10. The frontend sends a POST request to the `/api/schedule` endpoint with the selected candidates.
+11. The `app.py` receives the request and uses the `GoogleCalendarTool` to find available interview slots.
+12. The `app.py` then uses the `GoogleCalendarTool` to create the interview events and the `send_email` tool to send confirmation emails to the candidates.
 
 ## 📋 Prerequisites
 
@@ -56,17 +97,20 @@ The system uses Google Gemini API for efficient resume parsing and analysis, wit
 
 ## ⚙️ Setup and Installation
 
-### 1. Clone and Setup Project Structure
+### 1. Clone the Repository
 
 ```bash
-# Clone the repository (or create the directory structure)
-mkdir hr-ai-agent && cd hr-ai-agent
+git clone https://github.com/your-username/hr-agent.git
+cd hr-agent
+```
 
-# Create backend directory
-mkdir hr_agent_backend
+### 2. Backend Setup
+
+```bash
+# Navigate to the backend directory
 cd hr_agent_backend
 
-# Create Python virtual environment
+# Create a Python virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
@@ -74,29 +118,28 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Frontend Setup
+### 3. Frontend Setup
 
 ```bash
-# Return to root directory
+# Return to the root directory
 cd ..
 
-# The React frontend is already configured in src/App.tsx
-# Install any additional dependencies if needed
+# Install npm dependencies
 npm install
 ```
 
-### 3. Environment Configuration
+### 4. Environment Configuration
 
-#### Backend Environment (.env file)
+#### Backend Environment (`.env` file)
 
-Create `hr_agent_backend/.env` file:
+Create a `.env` file in the `hr_agent_backend` directory by copying the example file:
 
 ```bash
 cd hr_agent_backend
 cp .env.example .env
 ```
 
-Edit `.env` with your actual credentials:
+Edit the `.env` file with your actual credentials:
 
 ```env
 # Google Gemini API Configuration
@@ -121,13 +164,13 @@ INTERVIEWER_EMAIL=john.smith@company.com
 DEV_MODE=false
 ```
 
-### 4. Google Calendar API Setup (CRITICAL)
+### 5. Google Calendar API Setup (CRITICAL)
 
 This is the most complex setup step. Follow carefully:
 
 #### Step 1: Create Google Cloud Project
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing project
+2. Create a new project or select an existing one.
 3. Enable the **Google Calendar API**:
    - Navigate to "APIs & Services" → "Library"
    - Search for "Google Calendar API"
@@ -136,18 +179,18 @@ This is the most complex setup step. Follow carefully:
 #### Step 2: Create Credentials
 1. Go to "APIs & Services" → "Credentials"
 2. Click "Create Credentials" → "OAuth 2.0 Client IDs"
-3. Configure OAuth consent screen if prompted:
-   - User Type: External (for testing) or Internal (for organization)
-   - Fill required fields (app name, user support email)
-   - Add your email to test users
-4. Create OAuth Client ID:
+3. Configure the OAuth consent screen if prompted:
+   - User Type: External (for testing) or Internal (for your organization)
+   - Fill in the required fields (app name, user support email).
+   - Add your email to the list of test users.
+4. Create the OAuth Client ID:
    - Application type: **Desktop Application**
    - Name: "HR AI Agent"
-   - Download the credentials JSON file
+   - Download the credentials JSON file.
 
 #### Step 3: Setup Credentials
-1. Rename the downloaded file to `credentials.json`
-2. Place it in the `hr_agent_backend/` directory
+1. Rename the downloaded file to `credentials.json`.
+2. Place it in the `hr_agent_backend/` directory.
 3. The file structure should look like:
 ```json
 {
@@ -164,151 +207,57 @@ This is the most complex setup step. Follow carefully:
 
 #### Step 4: Initial Authentication
 The first time you run the backend, it will:
-1. Open a browser window for Google OAuth
-2. Ask you to sign in and grant calendar access
-3. Generate a `token.json` file automatically
-4. Store refresh tokens for future API calls
+1. Open a browser window for Google OAuth.
+2. Ask you to sign in and grant calendar access.
+3. This will generate a `token.pickle` file automatically, which will store your refresh tokens for future API calls.
 
-**Note**: This authentication only needs to be done once per setup.
+**Note**: This authentication only needs to be done once.
 
-### 5. Email Setup (Gmail App Passwords)
+### 6. Email Setup (Gmail App Passwords)
 
-1. Enable 2-Factor Authentication on your Gmail account
+1. Enable 2-Factor Authentication on your Gmail account.
 2. Generate an App Password:
-   - Go to Google Account settings
-   - Security → 2-Step Verification → App passwords
-   - Generate password for "Mail"
-   - Use this app password (not your regular password) in `.env`
+   - Go to your Google Account settings.
+   - Navigate to Security → 2-Step Verification → App passwords.
+   - Generate a new password for "Mail".
+   - Use this app password (not your regular password) in the `.env` file.
+
+### 7. Live Calender Preview
+1. Go to the Google Calender for which you took the credentials from. 
+2. Click on the "Settings and Sharing" icon (three vertical dots) in the top right corner.
+3. Select "Settings" from the dropdown menu.
+4. In the "Calendar settings" section, click on "Integrate calendar".
+5. You will see a calendar ID. This is the unique identifier for your calendar.
+6. Copy this calendar ID and add it to your `.env` file in the `hr_agent_backend` directory.
+   - Add the following line to your `.env` file:
+     ```env
+     GOOGLE_CALENDAR_ID=your-calendar-id
+     ```
+
 
 ## 🚀 How to Run
 
-### 1. Start Backend Server
+### 1. Start the Backend Server
 
 ```bash
 cd hr_agent_backend
-source venv/Scripts/activate
+source venv/Scripts/activate 
 python app.py
 ```
 
-Backend will start on `http://localhost:5000`
+The backend will start on `http://localhost:5000`.
 
 **First Run**: If Google Calendar is not authenticated, the backend will open a browser window for OAuth authentication.
 
-### 2. Start Frontend Development Server
+### 2. Start the Frontend Development Server
 
 ```bash
-# From project root directory
+# From the project root directory
 npm run dev
 ```
 
-Frontend will start on `http://localhost:5173`
-
-### 3. Access the Application
-
-Open `http://localhost:5173` in your browser to use the HR AI Agent dashboard.
-
-## 📚 API Endpoints
-
-### Backend API Documentation
-
-#### `POST /api/process`
-Process uploaded resumes against job description.
-
-**Request**: Multipart form data
-- `job_description` (text): Complete job description
-- `resumes` (files): Array of PDF resume files
-
-**Response**: JSON
-```json
-{
-  "candidates": [
-    {
-      "name": "John Doe",
-      "email": "john.doe@email.com", 
-      "phone": "555-1234",
-      "score": 8.5,
-      "summary": [
-        "5+ years Python development experience",
-        "Strong React and Node.js skills", 
-        "Led 3 successful product launches"
-      ]
-    }
-  ]
-}
-```
-
-#### `POST /api/schedule`
-Schedule interviews for selected candidates.
-
-**Request**: JSON
-```json
-{
-  "candidates": [
-    {
-      "name": "John Doe",
-      "email": "john.doe@email.com",
-      "phone": "555-1234"
-    }
-  ]
-}
-```
-
-**Response**: JSON
-```json
-{
-  "status": "success",
-  "message": "Interviews scheduled and confirmation emails sent to 3 candidates",
-  "details": {
-    "scheduled_interviews": 3,
-    "emails_sent": 3
-  }
-}
-```
-
-#### `GET /health`
-Health check endpoint.
-
-**Response**: JSON
-```json
-{
-  "status": "healthy",
-  "message": "HR AI Agent API is running"
-}
-```
-
-## 🧠 AI Agent System Details
-
-### Optimized Architecture
-
-The system uses **Google Gemini API** directly for efficient resume processing:
-
-#### 1. Gemini Resume Parser
-- **Function**: Direct API calls to Gemini 1.5 Flash
-- **Optimization**: Truncated inputs, structured JSON responses
-- **Token Efficiency**: ~70% reduction vs traditional LLM chains
-- **Output**: Structured candidate data with scores and summaries
-
-#### 2. Direct Calendar Integration
-- **Function**: Direct Google Calendar API calls
-- **Efficiency**: No LLM overhead for scheduling logic
-- **Output**: Scheduled interview events with meeting details
-
-#### 3. Template-Based Email System
-- **Function**: Pre-built HTML email templates
-- **Efficiency**: No LLM needed for email generation
-- **Output**: Delivery confirmation for sent emails
-
-### Token Usage Optimization
-
-The optimized system reduces token usage through:
-
-- **Text Truncation**: Resume text limited to 2000 characters
-- **Structured Prompts**: Minimal, focused prompts for specific tasks
-- **Batch Processing**: Efficient processing of multiple resumes
-- **Smart Scoring**: Quick keyword-based pre-screening before API calls
-- **JSON Responses**: Structured output reduces parsing overhead
-
-## 🔧 Development Mode
+The frontend will start on `http://localhost:5173`.
+# 🔧 Development Mode
 
 For development and testing without external API dependencies:
 
@@ -323,329 +272,6 @@ This enables:
 - Mock email sending
 - Simulated processing delays
 
-## 🛡️ Security Considerations
+### . Access the Application
 
-- **API Keys**: Store in environment variables, never commit to version control
-- **File Upload**: Only PDF files accepted, with size limits (16MB max)
-- **OAuth Tokens**: Stored locally, refresh automatically
-- **Email Credentials**: Use Gmail app passwords, not account passwords
-
-## 🧪 Testing
-
-```bash
-cd hr_agent_backend
-python -m pytest tests/ -v
-```
-
-## 📈 Production Deployment
-
-For production deployment:
-
-1. **Environment**: Set `DEV_MODE=false`
-2. **Security**: Use production OAuth credentials
-3. **Scaling**: Consider Redis for session management
-4. **Monitoring**: Add logging and health checks
-5. **Database**: Consider PostgreSQL for candidate data persistence
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-#### "Google Calendar credentials not found"
-- Ensure `credentials.json` is in `hr_agent_backend/` directory
-- Verify the file is properly formatted JSON
-- Check Google Cloud Console has Calendar API enabled
-
-#### "LLM API key not found"  
-- Verify `.env` file exists and contains valid API key
-- Ensure `LLM_PROVIDER` matches your chosen provider
-- Check API key permissions and quotas
-
-#### "PDF extraction failed"
-- Ensure uploaded files are valid PDFs
-- Check file size limits (16MB max)
-- Verify PyPDF2 can read the PDF format
-
-#### "Email sending failed"
-- Verify Gmail app password (not regular password)
-- Ensure 2FA is enabled on Gmail account
-- Check SMTP server settings
-
-### Debug Mode
-
-Enable detailed logging:
-
-```bash
-export FLASK_ENV=development
-export FLASK_DEBUG=1
-python app.py
-```
-
----
-
-## 💡 Features in Development
-
-- **Database integration** for candidate persistence
-- **Advanced scoring algorithms** with weighted criteria  
-- **Interview feedback collection** and candidate tracking
-- **Multi-company support** with role-based access
-- **Analytics dashboard** for hiring metrics
-
-For questions or support, please open an issue in the repository.
-
-## 📊 SWOT Analysis
-
-For a comprehensive strategic analysis of the HR AI Agent system, including strengths, weaknesses, opportunities, and threats, see [SWOT_ANALYSIS.md](SWOT_ANALYSIS.md).
-
-### Key Strategic Insights:
-- **70% cost reduction** through optimized Gemini API usage
-- **Strong market opportunity** in SMB recruitment automation
-- **Technical differentiation** through direct API integration
-- **Growth potential** in multi-language and industry-specific markets
-
-## 🚀 How to Run
-
-### 1. Start Backend Server
-
-```bash
-cd hr_agent_backend
-source venv/Scripts/activate
-python app.py
-```
-
-Backend will start on `http://localhost:5000`
-
-**First Run**: If Google Calendar is not authenticated, the backend will open a browser window for OAuth authentication.
-
-### 2. Start Frontend Development Server
-
-```bash
-# From project root directory
-npm run dev
-```
-
-Frontend will start on `http://localhost:5173`
-
-### 3. Access the Application
-
-Open `http://localhost:5173` in your browser to use the HR AI Agent dashboard.
-
-## 📚 API Endpoints
-
-### Backend API Documentation
-
-#### `POST /api/process`
-Process uploaded resumes against job description.
-
-**Request**: Multipart form data
-- `job_description` (text): Complete job description
-- `resumes` (files): Array of PDF resume files
-
-**Response**: JSON
-```json
-{
-  "candidates": [
-    {
-      "name": "John Doe",
-      "email": "john.doe@email.com", 
-      "phone": "555-1234",
-      "score": 8.5,
-      "summary": [
-        "5+ years Python development experience",
-        "Strong React and Node.js skills", 
-        "Led 3 successful product launches"
-      ]
-    }
-  ]
-}
-```
-
-#### `POST /api/schedule`
-Schedule interviews for selected candidates.
-
-**Request**: JSON
-```json
-{
-  "candidates": [
-    {
-      "name": "John Doe",
-      "email": "john.doe@email.com",
-      "phone": "555-1234"
-    }
-  ]
-}
-```
-
-**Response**: JSON
-```json
-{
-  "status": "success",
-  "message": "Interviews scheduled and confirmation emails sent to 3 candidates",
-  "details": {
-    "scheduled_interviews": 3,
-    "emails_sent": 3
-  }
-}
-```
-
-#### `GET /health`
-Health check endpoint.
-
-**Response**: JSON
-```json
-{
-  "status": "healthy",
-  "message": "HR AI Agent API is running"
-}
-```
-
-## 🧠 AI Agent System Details
-
-### Optimized Architecture
-
-The system uses **Google Gemini API** directly for efficient resume processing:
-
-#### 1. Gemini Resume Parser
-- **Function**: Direct API calls to Gemini 1.5 Flash
-- **Optimization**: Truncated inputs, structured JSON responses
-- **Token Efficiency**: ~70% reduction vs traditional LLM chains
-- **Output**: Structured candidate data with scores and summaries
-
-#### 2. Direct Calendar Integration
-- **Function**: Direct Google Calendar API calls
-- **Efficiency**: No LLM overhead for scheduling logic
-- **Output**: Scheduled interview events with meeting details
-
-#### 3. Template-Based Email System
-- **Function**: Pre-built HTML email templates
-- **Efficiency**: No LLM needed for email generation
-- **Output**: Delivery confirmation for sent emails
-
-### Token Usage Optimization
-
-The optimized system reduces token usage through:
-
-- **Text Truncation**: Resume text limited to 2000 characters
-- **Structured Prompts**: Minimal, focused prompts for specific tasks
-- **Batch Processing**: Efficient processing of multiple resumes
-- **Smart Scoring**: Quick keyword-based pre-screening before API calls
-- **JSON Responses**: Structured output reduces parsing overhead
-
-## 🔧 Development Mode
-
-For development and testing without external API dependencies:
-
-```env
-# Set in .env file
-DEV_MODE=true
-```
-
-This enables:
-- Mock PDF text extraction
-- Mock calendar scheduling  
-- Mock email sending
-- Simulated processing delays
-
-## 🛡️ Security Considerations
-
-- **API Keys**: Store in environment variables, never commit to version control
-- **File Upload**: Only PDF files accepted, with size limits (16MB max)
-- **OAuth Tokens**: Stored locally, refresh automatically
-- **Email Credentials**: Use Gmail app passwords, not account passwords
-
-## 🧪 Testing
-
-```bash
-cd hr_agent_backend
-python -m pytest tests/ -v
-```
-
-## 📈 Production Deployment
-
-For production deployment:
-
-1. **Environment**: Set `DEV_MODE=false`
-2. **Security**: Use production OAuth credentials
-3. **Scaling**: Consider Redis for session management
-4. **Monitoring**: Add logging and health checks
-5. **Database**: Consider PostgreSQL for candidate data persistence
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-#### "Google Calendar credentials not found"
-- Ensure `credentials.json` is in `hr_agent_backend/` directory
-- Verify the file is properly formatted JSON
-- Check Google Cloud Console has Calendar API enabled
-
-#### "LLM API key not found"  
-- Verify `.env` file exists and contains valid API key
-- Ensure `LLM_PROVIDER` matches your chosen provider
-- Check API key permissions and quotas
-
-#### "PDF extraction failed"
-- Ensure uploaded files are valid PDFs
-- Check file size limits (16MB max)
-- Verify PyPDF2 can read the PDF format
-
-#### "Email sending failed"
-- Verify Gmail app password (not regular password)
-- Ensure 2FA is enabled on Gmail account
-- Check SMTP server settings
-
-### Debug Mode
-
-Enable detailed logging:
-
-```bash
-export FLASK_ENV=development
-export FLASK_DEBUG=1
-python app.py
-```
-
----
-
-## 💡 Features in Development
-
-- **Database integration** for candidate persistence
-- **Advanced scoring algorithms** with weighted criteria  
-- **Interview feedback collection** and candidate tracking
-- **Multi-company support** with role-based access
-- **Analytics dashboard** for hiring metrics
-
-For questions or support, please open an issue in the repository.
-
-## 📊 SWOT Analysis
-
-For a comprehensive strategic analysis of the HR AI Agent system, including strengths, weaknesses, opportunities, and threats, see [SWOT_ANALYSIS.md](SWOT_ANALYSIS.md).
-
-### Key Strategic Insights:
-- **70% cost reduction** through optimized Gemini API usage
-- **Strong market opportunity** in SMB recruitment automation
-- **Technical differentiation** through direct API integration
-- **Growth potential** in multi-language and industry-specific markets
+Open `http://localhost:3000` in your browser to use the HR AI Agent dashboard.
