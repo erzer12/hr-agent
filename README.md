@@ -95,6 +95,38 @@ The agent flow is as follows:
 - **Google Cloud Project** - For Calendar API
 - **Gmail Account** - For email notifications (with app passwords enabled)
 
+## 📸 Screenshots
+- ### Frontend UI
+   <img width="1900" height="796" alt="Screenshot 2025-09-26 001146" src="https://github.com/user-attachments/assets/f4d6bd8d-1fd2-4976-98c2-1f5ef137ef74" />
+  
+- ### Ranked Candidates Output
+   <img width="1605" height="769" alt="Screenshot 2025-09-28 120232" src="https://github.com/user-attachments/assets/3da939c6-e509-4844-a180-c1dcf9a3e03a" />
+
+ - ### Gemini Resume Parsing in console
+   <img width="1391" height="694" alt="Screenshot 2025-09-26 002643" src="https://github.com/user-attachments/assets/86320832-6f9e-4fac-a81b-766e2c8ee8cb" />
+
+- ### Interview Scheduler
+  - #### Bulk Scheduler
+    <img width="1602" height="766" alt="Screenshot 2025-09-28 120321" src="https://github.com/user-attachments/assets/3e56f249-d449-4437-9c20-5b8be311f3cc" />
+  
+  - #### Single Scheduler
+    <img width="1602" height="771" alt="Screenshot 2025-09-28 120421" src="https://github.com/user-attachments/assets/754b8237-168e-4872-a10e-892120e9a40d" />
+
+ - ### Frontend Calender
+    <img width="1265" height="590" alt="Screenshot 2025-09-28 120528" src="https://github.com/user-attachments/assets/089b9ffc-8ade-4812-af1b-042f7ab98b30" />
+
+
+- ### Google Calendar Event
+  <img width="1627" height="756" alt="Screenshot 2025-09-28 120557" src="https://github.com/user-attachments/assets/08287129-7927-413d-b76c-e37eef86de23" />
+
+- ### Google Meet Setup
+  <img width="1617" height="767" alt="Screenshot 2025-09-28 130406" src="https://github.com/user-attachments/assets/65ed9e13-0e32-4ab0-894c-ead73c61226f" />
+
+- ### Email Inbox
+  <img width="1781" height="805" alt="Screenshot 2025-09-26 001051" src="https://github.com/user-attachments/assets/88bf61ab-7db0-433f-a0f6-afad0a52c947" />
+
+
+
 ## ⚙️ Setup and Installation
 
 ### 1. Clone the Repository
